@@ -1,65 +1,29 @@
-# GUVEL PrePPAP — SharePoint Model
+# GUVEL PrePPAP Tracker V2
 
-This package defines the SharePoint structure before connecting the GitHub Pages frontend.
+## What changed
+- Complete New PrePPAP Order form.
+- Automatic generation of the 9-folder SharePoint structure as a logical order template.
+- PO quantity vs shipped quantity.
+- Automatic remaining quantity / compensation status.
+- Order detail view.
+- SharePoint root configured for:
+  Engineering-Saltillo / Shared Documents / 0.1 New Product Development / PrePPAP Order's
 
-## Recommended site
+## Current mode
+DEMO mode uses localStorage. No SharePoint data is written yet.
 
-`GUVEL PrePPAP`
+This is intentional: before enabling Microsoft Graph, the process and folder model can be validated without risking company data.
 
-## Lists
+## Folder structure generated per order
+01_Cotizacion_MES_Cliente
+02_PO_Cliente_MES
+03_PrePPAP_Order_Request_MWS_MES
+04_PO_MES_MWS
+05_Factura_MWS_MES
+06_Metodo_de_Envio
+07_Monterrey_Cliente
+08_MWS_Cliente
+09_Factura_MES_Cliente
 
-1. PrePPAP Orders — parent order
-2. PrePPAP Tasks — workflow milestones
-3. PO Balances — partial POs and compensation
-4. Shipments — shipment-level tracking
-
-## Document library
-
-`PrePPAP Orders`
-
-Each order receives a folder:
-
-`PP-YYYY-###`
-
-Recommended subfolders:
-
-- 01_Quote
-- 02_Customer_PO
-- 03_PrePPAP_Request
-- 04_MES_PO_to_MWS
-- 05_MWS_Invoice
-- 06_Shipping
-- 07_MES_Invoice
-- 08_Compensation
-
-## Key design decision
-
-The lists use `PrePPAPID` as the business key rather than depending on SharePoint item IDs. This makes the data portable and keeps the relationship understandable in GUVEL.
-
-## Relationship
-
-```text
-PrePPAP Orders
-       |
-       +---- PrePPAP Tasks
-       |
-       +---- PO Balances
-       |
-       +---- Shipments
-       |
-       +---- Document Library / PrePPAPID folder
-```
-
-## Next integration step
-
-After the structure is approved:
-
-1. Create the SharePoint site.
-2. Create the four lists with these columns.
-3. Create the document library.
-4. Register GUVEL as an SPA in Microsoft Entra ID.
-5. Add the GitHub Pages redirect URI.
-6. Define Graph permissions with IT.
-7. Obtain Site ID + List IDs + Drive ID.
-8. Populate `config.js`.
-9. Replace demo/local data calls with Graph calls.
+## Next SharePoint phase
+The browser application will require Microsoft Entra ID + Microsoft Graph delegated authentication to create folders and open SharePoint documents securely. The exact tenant/site/drive identifiers and approved permissions should be supplied by the company's Microsoft 365 administrator.
