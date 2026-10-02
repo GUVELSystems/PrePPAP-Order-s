@@ -107,3 +107,20 @@ Before company-wide deployment:
 - Add document-category selection in upload
 - Add edit-order workflow
 - Add automatic task status transitions
+
+
+## Authentication troubleshooting
+
+If a user was created manually in Supabase Authentication → Users but GUVEL rejects the login:
+
+1. Supabase → Authentication → Users.
+2. Open the user.
+3. Confirm the user's email / mark it confirmed if your dashboard exposes that control.
+4. Verify the password by resetting it if necessary.
+5. Supabase → Authentication → Providers → Email:
+   - For internal testing, Email provider may be configured without email confirmation.
+   - For production, keep confirmation enabled and use the company's email workflow.
+
+The browser app only needs the Project URL and anon/publishable key. Never use the service_role key in config.js.
+
+The login screen is now part of the GUVEL visual system and does not expose a separate generic login template.

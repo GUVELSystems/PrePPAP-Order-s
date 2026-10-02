@@ -26,17 +26,37 @@ async function refresh(){
 }
 function showError(msg){ app.innerHTML=`<div class="panel error"><h2>GUVEL connection error</h2><p>${esc(msg)}</p><p>Check <b>config.js</b>, Supabase SQL/RLS and your logged-in user.</p></div>`; }
 function showLogin(message=""){
-  app.innerHTML=`<div class="login-wrap"><section class="panel login"><div class="brandmark">G</div><small>GUVEL SYSTEMS</small><h1>PrePPAP Tracker</h1><p>${esc(message||"Sign in to access the PrePPAP database.")}</p><form id="loginForm"><label>Email<input name="email" type="email" required></label><label>Password<input name="password" type="password" required></label><button class="primary">Sign in</button></form><button class="link" id="signup">Create account</button><div id="loginMsg"></div></section></div>`;
+  app.innerHTML=`<div class="guvel-login">
+    <div class="login-brand"><span class="gmark">G</span><div><strong>GUVEL</strong><small>SMARTER QUALITY SOLUTIONS</small></div></div>
+    <div class="login-card">
+      <div class="login-top"><small>GUVEL SYSTEMS</small><h1>PrePPAP Tracker</h1><p>Commercial & document control for PrePPAP orders.</p></div>
+      <form id="loginForm">
+        <label>EMAIL ADDRESS<input name="email" type="email" autocomplete="username" placeholder="you@company.com" required></label>
+        <label>PASSWORD<input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required></label>
+        <button class="primary login-submit">Sign in</button>
+      </form>
+      <div id="loginMsg" class="login-msg">${esc(message||"")}</div>
+      <div class="login-help">Access is managed through Supabase Authentication.</div>
+    </div>
+    <div class="login-footer">GUVEL PREPPAP · SECURE WORKSPACE</div>
+  </div>`;
   document.querySelector("#loginForm").onsubmit=async e=>{
-    e.preventDefault(); const f=new FormData(e.target); const msg=document.querySelector("#loginMsg");
-    try{await signIn(f.get("email"),f.get("password")); session=await getSession(); await refresh();}
-    catch(err){msg.textContent=err.message;}
-  };
-  document.querySelector("#signup").onclick=async()=>{
-    const email=prompt("Email"); const password=prompt("Password (minimum 6 characters)");
-    if(!email||!password)return;
-    try{await signUp(email,password);alert("Account created. If email confirmation is enabled in Supabase, confirm the email and then sign in.");}
-    catch(err){alert(err.message);}
+    e.preventDefault();
+    const f=new FormData(e.target), msg=document.querySelector("#loginMsg"), btn=document.querySelector(".login-submit");
+    btn.disabled=true; btn.textContent="Signing in...";
+    msg.className="login-msg";
+    try{
+      await signIn(f.get("email"),f.get("password"));
+      session=await getSession();
+      if(!session) throw new Error("Supabase did not return an active session.");
+      await refresh();
+    }catch(err){
+      let m=err.message||"Unable to sign in.";
+      if(/email not confirmed/i.test(m)) m="Email not confirmed. In Supabase, open Authentication → Users and confirm this user, or disable email confirmation for your internal test.";
+      if(/invalid login credentials/i.test(m)) m="Invalid email or password. Verify the user exists in Authentication → Users and that the password is correct.";
+      msg.className="login-msg error-msg"; msg.textContent=m;
+      btn.disabled=false; btn.textContent="Sign in";
+    }
   };
 }
 function render(){
