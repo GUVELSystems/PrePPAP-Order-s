@@ -1,29 +1,46 @@
 # GUVEL PrePPAP Tracker V2
 
-## What changed
-- Complete New PrePPAP Order form.
-- Automatic generation of the 9-folder SharePoint structure as a logical order template.
-- PO quantity vs shipped quantity.
-- Automatic remaining quantity / compensation status.
-- Order detail view.
-- SharePoint root configured for:
-  Engineering-Saltillo / Shared Documents / 0.1 New Product Development / PrePPAP Order's
+## Added in this version
 
-## Current mode
-DEMO mode uses localStorage. No SharePoint data is written yet.
+### 1. New PrePPAP Order
+A full form captures:
+- Customer
+- Part Number / Revision
+- Purpose
+- Request / Required dates
+- Requested quantity
+- Priority / Owner
+- Shipping method
+- Customer PO and quantity
+- PrePPAP Request
+- MES PO and quantity
+- MWS Invoice and quantity
+- FedEx / tracking
+- Shipped / invoiced quantities
+- SharePoint folder link
+- Comments
 
-This is intentional: before enabling Microsoft Graph, the process and folder model can be validated without risking company data.
+### 2. Compensation Management
+A dedicated PO Balance screen supports:
+- PO type
+- PO number
+- Ordered quantity
+- Delivered/shipped quantity
+- Automatic remaining quantity
+- Compensation action
+- Related PO
+- Resolution date
+- Open / Partial / Closed status
+- Comments
 
-## Folder structure generated per order
-01_Cotizacion_MES_Cliente
-02_PO_Cliente_MES
-03_PrePPAP_Order_Request_MWS_MES
-04_PO_MES_MWS
-05_Factura_MWS_MES
-06_Metodo_de_Envio
-07_Monterrey_Cliente
-08_MWS_Cliente
-09_Factura_MES_Cliente
+Example: 5 ordered, 4 delivered = 1 remaining. The balance stays visible until dispositioned.
 
-## Next SharePoint phase
-The browser application will require Microsoft Entra ID + Microsoft Graph delegated authentication to create folders and open SharePoint documents securely. The exact tenant/site/drive identifiers and approved permissions should be supplied by the company's Microsoft 365 administrator.
+## Run
+Use a local static server because the project uses ES modules:
+`python -m http.server 8080`
+
+## GitHub Pages
+Upload all files to a repository and enable GitHub Pages from the root of `main`.
+
+## SharePoint
+Set `DEMO_MODE=false` in `config.js`, then configure the Microsoft Entra SPA client ID and SharePoint site/list IDs. `sharepoint.js` contains the Microsoft Graph adapter. SharePoint becomes the source of truth; localStorage remains only a prototype/UI fallback.

@@ -1,141 +1,23 @@
-const TASKS = [
-  ["Cotización MES a Cliente","01_Cotizacion_MES_Cliente"],
-  ["PO Cliente a MES (MWS utilizará la PO directa de cliente)","02_PO_Cliente_MES"],
-  ["PrePPAP Order Request MWS a MES","03_PrePPAP_Order_Request_MWS_MES"],
-  ["PO MES a MWS","04_PO_MES_MWS"],
-  ["Factura MWS a MES","05_Factura_MWS_MES"],
-  ["Método de Envío","06_Metodo_de_Envio"],
-  ["Monterrey a Cliente: Proceso de MES","07_Monterrey_Cliente"],
-  ["MWS a Cliente: Guía de FedEx con Referencias (Número de parte + Propósito)","08_MWS_Cliente"],
-  ["Factura MES a Cliente","09_Factura_MES_Cliente"]
-];
-
-const KEY="guvel_preppap_v2";
-let state=JSON.parse(localStorage.getItem(KEY)||'{"orders":[]}');
-let currentView="dashboard";
-
-function save(){localStorage.setItem(KEY,JSON.stringify(state));}
-function esc(s){return String(s??"").replace(/[&<>"']/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[c]));}
-function money(n){return new Intl.NumberFormat("en-US",{style:"currency",currency:"USD"}).format(Number(n)||0);}
-
-function folderTree(order){
-  return TASKS.map((t,i)=>`<div class="folder-row"><span class="folder-num">${String(i+1).padStart(2,"0")}</span><span class="folder-icon">▰</span><span>${esc(t[0])}</span><span class="folder-path">${esc(t[1])}</span></div>`).join("");
-}
-
-function renderDashboard(){
-  const o=state.orders;
-  const total=o.reduce((a,x)=>a+Number(x.poQty||0),0);
-  const shipped=o.reduce((a,x)=>a+Number(x.shippedQty||0),0);
-  const remaining=o.reduce((a,x)=>a+Math.max(Number(x.poQty||0)-Number(x.shippedQty||0),0),0);
-  document.getElementById("app").innerHTML=`
-    <div class="cards">
-      <div class="card"><span>PrePPAP Orders</span><strong>${o.length}</strong></div>
-      <div class="card"><span>PO Qty</span><strong>${total}</strong></div>
-      <div class="card"><span>Shipped</span><strong>${shipped}</strong></div>
-      <div class="card alert"><span>Pending / Compensation</span><strong>${remaining}</strong></div>
-    </div>
-    <div class="panel">
-      <div class="panel-head"><h2>Recent Orders</h2><button class="secondary" onclick="setView('orders')">View all</button></div>
-      ${o.length?o.slice(-6).reverse().map(orderRow).join(""):'<div class="empty">No PrePPAP orders yet. Create the first one.</div>'}
-    </div>`;
-}
-
-function orderRow(o){
-  const rem=Math.max(Number(o.poQty||0)-Number(o.shippedQty||0),0);
-  return `<div class="order-row">
-    <div><b>${esc(o.reference)}</b><span>${esc(o.customer)} · ${esc(o.partNumber)}</span></div>
-    <div class="qty">${o.poQty} pcs</div>
-    <div class="${rem?'warning':'ok'}">${rem?rem+" pending":"Complete"}</div>
-    <button class="link" onclick="showOrder('${o.id}')">Open</button>
-  </div>`;
-}
-
-function renderOrders(){
-  document.getElementById("app").innerHTML=`
-    <div class="panel">
-      <div class="panel-head"><h2>PrePPAP Orders</h2><button class="primary" onclick="openModal()">+ New PrePPAP</button></div>
-      ${state.orders.length?state.orders.map(orderRow).join(""):'<div class="empty">No orders created.</div>'}
-    </div>`;
-}
-
-function renderComp(){
-  const rows=state.orders.map(o=>{
-    const po=Number(o.poQty||0), ship=Number(o.shippedQty||0), rem=Math.max(po-ship,0);
-    return `<div class="comp-row"><div><b>${esc(o.reference)}</b><span>${esc(o.customer)} · ${esc(o.partNumber)}</span></div>
-      <div>PO <strong>${po}</strong></div><div>Shipped <strong>${ship}</strong></div>
-      <div class="${rem?'warning':'ok'}">Remaining <strong>${rem}</strong></div>
-      <button class="secondary" onclick="updateQty('${o.id}')">Update</button></div>`;
-  }).join("");
-  document.getElementById("app").innerHTML=`<div class="panel"><div class="panel-head"><h2>PO Balance & Compensation</h2></div>
-  <div class="notice">GUVEL calculates the unfulfilled quantity from PO MES → MWS. A remaining quantity stays open until it is resolved by shipment, credit/compensation, or another defined action.</div>
-  ${rows||'<div class="empty">No orders yet.</div>'}</div>`;
-}
-
-function showOrder(id){
-  const o=state.orders.find(x=>x.id===id); if(!o)return;
-  const rem=Math.max(Number(o.poQty||0)-Number(o.shippedQty||0),0);
-  document.getElementById("pageTitle").textContent=o.reference;
-  document.getElementById("app").innerHTML=`
-    <button class="back" onclick="setView('orders')">← Back to Orders</button>
-    <div class="hero"><div><div class="eyebrow">${esc(o.customer)}</div><h2>${esc(o.partNumber)}</h2><p>${esc(o.reference)} · PO ${o.poQty} pcs</p></div>
-    <div class="hero-stat"><span>Remaining</span><strong class="${rem?'warning':'ok'}">${rem} pcs</strong></div></div>
-    <div class="panel"><div class="panel-head"><h2>SharePoint Folder Structure</h2><span class="badge">READY TO SYNC</span></div>
-      <div class="root-path">${esc(GUVEL_CONFIG.sharePoint.rootPath)}/${esc(o.folderName)}</div>
-      ${folderTree(o)}
-    </div>
-    <div class="panel"><div class="panel-head"><h2>Order Data</h2></div>
-      <div class="detail-grid">
-        <div><span>Customer</span><b>${esc(o.customer)}</b></div>
-        <div><span>Part Number</span><b>${esc(o.partNumber)}</b></div>
-        <div><span>PO Qty</span><b>${o.poQty}</b></div>
-        <div><span>Shipped Qty</span><b>${o.shippedQty}</b></div>
-        <div><span>Due Date</span><b>${esc(o.dueDate||"-")}</b></div>
-        <div><span>Created</span><b>${new Date(o.createdAt).toLocaleString()}</b></div>
-      </div>
-      <div class="actions"><button class="secondary" onclick="updateQty('${o.id}')">Update Shipment Qty</button>
-      <button class="danger" onclick="deleteOrder('${o.id}')">Delete Order</button></div>
-    </div>`;
-}
-
-function updateQty(id){
-  const o=state.orders.find(x=>x.id===id); if(!o)return;
-  const v=prompt("Shipped quantity for "+o.reference, o.shippedQty||0);
-  if(v===null)return;
-  const n=Math.max(0,Number(v)||0);
-  o.shippedQty=n;
-  if(n < Number(o.poQty||0)){
-    o.compensation={status:"OPEN",remaining:Number(o.poQty||0)-n};
-  }else{o.compensation={status:"RESOLVED",remaining:0};}
-  save(); render();
-}
-
-function deleteOrder(id){
-  if(!confirm("Delete this PrePPAP order from the DEMO database?"))return;
-  state.orders=state.orders.filter(x=>x.id!==id); save(); render();
-}
-
-function openModal(){
-  document.getElementById("newTasks").innerHTML=TASKS.map((t,i)=>`<label class="check"><input type="checkbox" checked disabled><span>${i+1}. ${esc(t[0])}</span></label>`).join("");
-  document.getElementById("modal").classList.remove("hidden");
-}
-function closeModal(){document.getElementById("modal").classList.add("hidden");}
-function createOrder(e){
-  e.preventDefault();
-  const f=new FormData(e.target);
-  const ref=f.get("reference").trim(), customer=f.get("customer").trim(), part=f.get("partNumber").trim();
-  const folder=f.get("folderName").trim() || `${ref} | ${customer} | ${part}`;
-  const o={id:crypto.randomUUID(),reference:ref,customer,partNumber:part,poQty:Number(f.get("poQty")||0),shippedQty:0,dueDate:f.get("dueDate"),folderName:folder,notes:f.get("notes"),createdAt:new Date().toISOString(),compensation:{status:"OPEN",remaining:Number(f.get("poQty")||0)}};
-  state.orders.push(o);save();closeModal();e.target.reset();showOrder(o.id);
-}
-function setView(v){currentView=v;render();}
-function render(){
-  document.querySelectorAll(".nav").forEach(x=>x.classList.toggle("active",x.dataset.view===currentView));
-  document.getElementById("pageTitle").textContent=currentView==="dashboard"?"Dashboard":currentView==="orders"?"PrePPAP Orders":"Compensation";
-  currentView==="dashboard"?renderDashboard():currentView==="orders"?renderOrders():renderComp();
-}
-document.querySelectorAll(".nav").forEach(x=>x.onclick=()=>setView(x.dataset.view));
-document.getElementById("newOrderBtn").onclick=openModal;
-document.getElementById("closeModal").onclick=closeModal;
-document.getElementById("cancelModal").onclick=closeModal;
-document.getElementById("orderForm").onsubmit=createOrder;
+import{CONFIG}from'./config.js';import{demoOrders,taskDefinitions}from'./data.js';import{loadLocalOrders,saveLocalOrders}from'./storage.js';import{SharePointAdapter}from'./sharepoint.js';
+const app=document.querySelector('#app');let orders=loadLocalOrders(demoOrders),selectedId=orders[0]?.id||null,view='dashboard',msalInstance=null,adapter=null;
+if(!CONFIG.DEMO_MODE&&window.msal){msalInstance=new msal.PublicClientApplication({auth:{clientId:CONFIG.msal.clientId,authority:CONFIG.msal.authority,redirectUri:CONFIG.msal.redirectUri},cache:{cacheLocation:'sessionStorage'}});adapter=new SharePointAdapter({msalInstance,config:CONFIG})}
+const esc=v=>String(v??'').replace(/[&<>"']/g,s=>({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[s]));
+const bal=o=>({ship:Math.max(0,(+o.qtyRequested||0)-(+o.qtyShipped||0)),invoice:Math.max(0,(+o.qtyRequested||0)-(+o.qtyInvoiced||0))});
+const stat=o=>{const b=bal(o);return b.ship===0&&b.invoice===0?'Completed':(+o.qtyShipped||0)>0||(+o.qtyInvoiced||0)>0?'In Progress':'Not Started'};
+const pill=s=>`<span class="pill ${s.toLowerCase().replaceAll(' ','-')}">${esc(s)}</span>`;
+function nav(id,t,i){return`<button class="nav ${view===id?'active':''}" data-nav="${id}"><span>${i}</span>${t}</button>`}
+function render(){app.innerHTML=`<div class="shell"><aside><div class="brand"><b>G</b><div><strong>GUVEL</strong><small>PrePPAP</small></div></div><nav>${nav('dashboard','Dashboard','▦')}${nav('orders','PrePPAP Orders','◫')}${nav('tasks','Tasks','✓')}${nav('balances','PO Balance','↔')}${nav('shipments','Shipments','⌁')}</nav><div class="sidefoot"><small>${CONFIG.DEMO_MODE?'DEMO MODE':'SHAREPOINT MODE'}</small><button id="auth">${CONFIG.DEMO_MODE?'Configure SharePoint':'Sign in with Microsoft'}</button></div></aside><main><header><div><small>GUVEL SYSTEMS</small><h1>${({dashboard:'PrePPAP Control',orders:'PrePPAP Orders',tasks:'Task Tracker',balances:'PO Balance & Compensation',shipments:'Shipment Control'})[view]}</h1></div><div class="actions"><span class="connection"><i></i>${CONFIG.DEMO_MODE?'Local demo':'SharePoint'}</span><button class="primary" id="new">+ New PrePPAP</button></div></header><section class="content">${content()}</section></main></div>`;bind()}
+function content(){if(view==='dashboard')return dashboard();if(view==='orders')return ordersPage();if(view==='tasks')return tasksPage();if(view==='balances')return balancesPage();return shipmentsPage()}
+function dashboard(){const c=orders.filter(o=>stat(o)==='Completed').length,q=orders.reduce((s,o)=>s+bal(o).ship,0),i=orders.reduce((s,o)=>s+bal(o).invoice,0),b=orders.reduce((s,o)=>s+(o.balances||[]).filter(x=>x.status!=='Closed').length,0);return`<div class="metrics"><div><small>Total Orders</small><strong>${orders.length}</strong><em>All PrePPAP orders</em></div><div><small>Completed</small><strong>${c}</strong><em>No quantity balance</em></div><div><small>Open Ship Qty</small><strong>${q}</strong><em>Pieces remaining</em></div><div><small>Open Compensation</small><strong>${b}</strong><em>Balance records</em></div></div><div class="twocol"><section class="panel"><div class="head"><div><h2>Active Orders</h2><p>Commercial and shipment flow</p></div><button class="link" data-nav="orders">View all →</button></div>${orders.slice(0,5).map(row).join('')}</section><section class="panel"><div class="head"><div><h2>Control Rules</h2><p>V1 operating logic</p></div></div>${[['01','Every order has a unique PrePPAP ID and folder.'],['02','Partial POs create an explicit remaining quantity.'],['03','An order is not complete while quantity remains.'],['04','MWS → Customer requires FedEx + Part Number + Purpose.']].map(x=>`<div class="rule"><b>${x[0]}</b><span>${x[1]}</span></div>`).join('')}</section></div>`}
+function row(o){const b=bal(o);return`<button class="orderrow" data-order="${esc(o.id)}"><div><b>${esc(o.id)}</b><span>${esc(o.customer)} · ${esc(o.partNumber)}</span></div><strong>${o.qtyRequested} pcs ${b.ship?`<small>· ${b.ship} open</small>`:''}</strong><div>${pill(stat(o))}</div></button>`}
+function ordersPage(){return`<div class="toolbar"><input id="search" placeholder="Search PrePPAP, customer, part number..."><select id="filter"><option>All Status</option><option>Completed</option><option>In Progress</option><option>Not Started</option></select></div><section class="panel table"><table><thead><tr><th>PrePPAP</th><th>Customer</th><th>Part</th><th>Purpose</th><th>Qty</th><th>Open</th><th>Status</th></tr></thead><tbody id="rows"></tbody></table></section>${selectedId?detail(orders.find(x=>x.id===selectedId)):''}`}
+function fill(){const body=document.querySelector('#rows');if(!body)return;const s=document.querySelector('#search')?.value||'',f=document.querySelector('#filter')?.value||'All Status';body.innerHTML=orders.filter(o=>[o.id,o.customer,o.partNumber,o.purpose].join(' ').toLowerCase().includes(s.toLowerCase())&&(f==='All Status'||stat(o)===f)).map(o=>{const b=bal(o);return`<tr data-order="${esc(o.id)}"><td><b>${esc(o.id)}</b></td><td>${esc(o.customer)}</td><td>${esc(o.partNumber)}</td><td>${esc(o.purpose)}</td><td>${o.qtyRequested}</td><td class="${b.ship?'red':''}">${b.ship}</td><td>${pill(stat(o))}</td></tr>`}).join('')||`<tr><td colspan="7" class="empty">No orders found.</td></tr>`}
+function detail(o){if(!o)return'';const b=bal(o);return`<section class="panel detail"><div class="detailhead"><div><small>${esc(o.id)}</small><h2>${esc(o.customer)} · ${esc(o.partNumber)}</h2><p>${esc(o.purpose)} · Required ${esc(o.requiredDate||'—')}</p></div><div>${pill(stat(o))}</div></div><div class="qtygrid"><div><small>Requested</small><b>${o.qtyRequested} pcs</b></div><div><small>Shipped</small><b>${o.qtyShipped} pcs</b></div><div class="${b.ship?'warn':''}"><small>Remaining to Ship</small><b>${b.ship} pcs</b></div><div class="${b.invoice?'warn':''}"><small>Remaining to Invoice</small><b>${b.invoice} pcs</b></div></div><div class="detailcols"><div><h3>Workflow</h3>${taskDefinitions.map((t,i)=>`<div class="taskline"><span class="check ${i<5?'done':''}">${i<5?'✓':'○'}</span><span>${t[1]}</span><small>${t[2]} → ${t[3]}</small></div>`).join('')}</div><div><h3>Documents</h3>${[['📁','Open PrePPAP Folder',o.folderLink],['▣','Customer PO',o.customerPOLink],['▣','PrePPAP Request',o.prePPAPRequestLink],['▣','MES PO → MWS',o.mesPOLink],['▣','MWS Invoice',o.mwsInvoiceLink],['▣','MES Invoice',o.mesInvoiceLink]].map(x=>`<a class="doc" href="${x[2]||'#'}" target="_blank"><span>${x[0]}</span>${x[1]}<em>↗</em></a>`).join('')}</div></div>${b.ship?`<div class="alert"><b>⚠ ${b.ship} pc pending.</b> Go to PO Balance to define the compensation action.</div>`:''}</section>`}
+function tasksPage(){return`<section class="panel table"><table><thead><tr><th>PrePPAP</th><th>Task</th><th>From</th><th>To</th><th>Due</th><th>Status</th></tr></thead><tbody>${orders.flatMap(o=>taskDefinitions.map((t,i)=>`<tr><td><b>${esc(o.id)}</b></td><td>${t[1]}</td><td>${t[2]}</td><td>${t[3]}</td><td>${esc(o.requiredDate||'—')}</td><td>${pill(i<5?'Completed':'In Progress')}</td></tr>`)).join('')}</tbody></table></section>`}
+function balancesPage(){return`<div class="balancebar"><div><h2>PO Balance & Compensation</h2><p>Every quantity mismatch must have an explicit disposition.</p></div><button class="primary" id="addBalance">+ Add Compensation</button></div><section class="panel table"><table><thead><tr><th>PrePPAP</th><th>PO</th><th>Ordered</th><th>Delivered</th><th>Remaining</th><th>Action</th><th>Related PO</th><th>Resolution</th><th>Status</th><th></th></tr></thead><tbody>${orders.flatMap(o=>(o.balances||[]).map((x,i)=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(x.poNumber)}</td><td>${x.orderedQty}</td><td>${x.deliveredQty}</td><td class="red"><b>${Math.max(0,x.orderedQty-x.deliveredQty)}</b></td><td>${esc(x.action||'—')}</td><td>${esc(x.relatedPO||'—')}</td><td>${esc(x.resolutionDate||'—')}</td><td>${pill(x.status||'Open')}</td><td><button class="mini" data-edit-balance="${esc(o.id)}" data-bi="${i}">Edit</button></td></tr>`)).join('')||`<tr><td colspan="10" class="empty">No compensation records.</td></tr>`}</tbody></table></section><div class="panel explainer"><b>Example:</b> MES PO = 5 pcs, delivered = 4 pcs → Remaining = <strong>1 pc</strong>. The record stays Open until a defined action closes it.</div>`}
+function shipmentsPage(){return`<section class="panel table"><table><thead><tr><th>PrePPAP</th><th>Method</th><th>Part</th><th>Purpose</th><th>Qty</th><th>FedEx</th><th>References</th></tr></thead><tbody>${orders.map(o=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(o.shippingMethod)}</td><td>${esc(o.partNumber)}</td><td>${esc(o.purpose)}</td><td>${o.qtyShipped}</td><td>${esc(o.fedex||'—')}</td><td>${o.shippingMethod==='MWS → Customer'?esc(o.partNumber)+' · '+esc(o.purpose):'MES process'}</td></tr>`).join('')}</tbody></table></section>`}
+function modal(html){document.body.insertAdjacentHTML('beforeend',`<div class="modalbg" id="modal"><div class="modal">${html}</div></div>`);document.querySelector('#modal .close')?.addEventListener('click',()=>document.querySelector('#modal').remove())}
+function newOrder(){modal(`<div class="modalhead"><div><small>NEW RECORD</small><h2>Create PrePPAP Order</h2></div><button class="close">×</button></div><form id="orderForm"><div class="formgrid"><label>Customer<input name="customer" required></label><label>Part Number<input name="partNumber" required></label><label>Revision<input name="revision"></label><label>Purpose<select name="purpose"><option>Prototype</option><option>Validation</option><option>Pre-Production</option><option>PPAP</option><option>Sample</option><option>Other</option></select></label><label>Request Date<input name="requestDate" type="date" value="${new Date().toISOString().slice(0,10)}"></label><label>Required Date<input name="requiredDate" type="date"></label><label>Qty Requested<input name="qtyRequested" type="number" min="0" required></label><label>Priority<select name="priority"><option>Normal</option><option>Low</option><option>High</option><option>Critical</option></select></label><label>Owner<select name="owner"><option>Quality</option><option>Engineering</option><option>Purchasing</option><option>Logistics</option><option>Finance</option><option>MES</option><option>MWS</option></select></label><label>Shipping Method<select name="shippingMethod"><option>Monterrey → Customer</option><option>MWS → Customer</option></select></label><label>Customer PO #<input name="customerPO"></label><label>Customer PO Qty<input name="customerPOQty" type="number" min="0"></label><label>PrePPAP Request #<input name="prePPAPRequest"></label><label>MES PO #<input name="mesPO"></label><label>MES PO Qty<input name="mesPOQty" type="number" min="0"></label><label>MWS Invoice #<input name="mwsInvoice"></label><label>MWS Invoice Qty<input name="mwsInvoiceQty" type="number" min="0"></label><label>FedEx / Tracking<input name="fedex"></label><label>Qty Shipped<input name="qtyShipped" type="number" min="0" value="0"></label><label>Qty Invoiced<input name="qtyInvoiced" type="number" min="0" value="0"></label><label class="full">PrePPAP Folder Link<input name="folderLink" placeholder="SharePoint folder URL"></label><label class="full">Comments<textarea name="comments"></textarea></label></div><div class="modalactions"><button type="button" class="secondary close">Cancel</button><button class="primary">Create Order</button></div></form></div>`);document.querySelector('#orderForm').addEventListener('submit',e=>{e.preventDefault();const f=new FormData(e.target),n=String(orders.length+1).padStart(3,'0'),id=`PP-${new Date().getFullYear()}-${n}`,o=Object.fromEntries(f.entries());for(const k of ['qtyRequested','customerPOQty','mesPOQty','mwsInvoiceQty','qtyShipped','qtyInvoiced'])o[k]=+(o[k]||0);Object.assign(o,{id,folderLink:o.folderLink||'#',quoteLink:'#',customerPOLink:'#',prePPAPRequestLink:'#',mesPOLink:'#',mwsInvoiceLink:'#',mesInvoiceLink:'#',balances:[]});orders.unshift(o);saveLocalOrders(orders);selectedId=id;document.querySelector('#modal').remove();view='orders';render()})}
+function balanceModal(order,idx=-1){const x=idx>=0?order.balances[idx]:{poType:'MES PO to MWS',poNumber:order.mesPO||'',orderedQty:order.mesPOQty||0,deliveredQty:order.qtyShipped||0,action:'',relatedPO:'',resolutionDate:'',status:'Open',comments:''};modal(`<div class="modalhead"><div><small>${esc(order.id)}</small><h2>${idx>=0?'Edit':'Add'} Compensation</h2></div><button class="close">×</button></div><form id="balanceForm"><div class="formgrid"><label>PO Type<select name="poType"><option ${x.poType==='MES PO to MWS'?'selected':''}>MES PO to MWS</option><option>Customer PO to MES</option><option>Other</option></select></label><label>PO Number<input name="poNumber" value="${esc(x.poNumber)}" required></label><label>Ordered Qty<input name="orderedQty" type="number" min="0" value="${x.orderedQty}" required></label><label>Delivered / Shipped Qty<input name="deliveredQty" type="number" min="0" value="${x.deliveredQty}" required></label><label class="full">Compensation Action<select name="action"><option value="">Select action</option><option ${x.action==='Ship with next PrePPAP order'?'selected':''}>Ship with next PrePPAP order</option><option ${x.action==='Ship separately'?'selected':''}>Ship separately</option><option ${x.action==='Credit'?'selected':''}>Credit</option><option ${x.action==='Cancel'?'selected':''}>Cancel</option><option ${x.action==='Transfer to another PO'?'selected':''}>Transfer to another PO</option></select></label><label>Related PO<input name="relatedPO" value="${esc(x.relatedPO)}"></label><label>Resolution Date<input name="resolutionDate" type="date" value="${esc(x.resolutionDate)}"></label><label>Status<select name="status"><option ${x.status==='Open'?'selected':''}>Open</option><option ${x.status==='Partial'?'selected':''}>Partial</option><option ${x.status==='Closed'?'selected':''}>Closed</option></select></label><label class="full">Comments<textarea name="comments">${esc(x.comments)}</textarea></label></div><div class="balancepreview">Remaining quantity: <strong id="remainingPreview">${Math.max(0,(x.orderedQty||0)-(x.deliveredQty||0))} pcs</strong></div><div class="modalactions"><button type="button" class="secondary close">Cancel</button><button class="primary">Save Compensation</button></div></form></div>`);const form=document.querySelector('#balanceForm');const update=()=>{const a=+form.orderedQty.value||0,b=+form.deliveredQty.value||0;document.querySelector('#remainingPreview').textContent=Math.max(0,a-b)+' pcs'};form.orderedQty.addEventListener('input',update);form.deliveredQty.addEventListener('input',update);form.addEventListener('submit',e=>{e.preventDefault();const f=Object.fromEntries(new FormData(form));f.orderedQty=+f.orderedQty;f.deliveredQty=+f.deliveredQty;const rem=Math.max(0,f.orderedQty-f.deliveredQty);if(rem===0)f.status='Closed';if(!order.balances)order.balances=[];if(idx>=0)order.balances[idx]=f;else order.balances.push(f);saveLocalOrders(orders);document.querySelector('#modal').remove();render()})}
+function bind(){document.querySelectorAll('[data-nav]').forEach(x=>x.onclick=()=>{view=x.dataset.nav;render()});document.querySelectorAll('[data-order]').forEach(x=>x.onclick=()=>{selectedId=x.dataset.order;view='orders';render()});document.querySelector('#new')?.addEventListener('click',newOrder);document.querySelector('#auth')?.addEventListener('click',()=>alert(CONFIG.DEMO_MODE?'Demo mode: configure config.js to connect SharePoint.':'Use Microsoft sign-in.'));document.querySelector('#search')?.addEventListener('input',fill);document.querySelector('#filter')?.addEventListener('change',fill);fill();document.querySelector('#addBalance')?.addEventListener('click',()=>{const o=orders.find(x=>x.id===selectedId)||orders[0];balanceModal(o)});document.querySelectorAll('[data-edit-balance]').forEach(x=>x.onclick=()=>{const o=orders.find(a=>a.id===x.dataset.editBalance);balanceModal(o,+x.dataset.bi)})}
 render();
