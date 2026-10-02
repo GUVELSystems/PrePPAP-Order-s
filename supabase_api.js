@@ -70,7 +70,7 @@ export async function createOrder(input){
   if(rpcError) throw rpcError;
   const orderNumber=rpcOrder;
 
-  const folderPath=`${orderNumber} | ${sanitize(input.customer)} | ${sanitize(input.partNumber)}`;
+  const folderPath=storageOrderFolder(orderNumber,input.customer,input.partNumber);
   const payload={
     order_number:orderNumber,
     customer:input.customer,
@@ -120,18 +120,32 @@ export async function createOrder(input){
   return orderNumber;
 }
 
-function sanitize(v){return String(v||"").replace(/[\\/:*?"<>|#%{}~&]/g,"-").trim().replace(/\s+/g," ");}
+function sanitize(v){
+  // Storage-safe path segment. Keep spaces/hyphens, remove reserved/problematic characters.
+  return String(v||"")
+    .normalize("NFKD")
+    .replace(/[\\/:*?"<>|#%{}~&\[\]();,'`]/g,"-")
+    .replace(/\s+/g," ")
+    .replace(/-+/g,"-")
+    .replace(/^[-. ]+|[-. ]+$/g,"")
+    .slice(0,120);
+}
+
+function storageOrderFolder(orderNumber,customer,partNumber){
+  // IMPORTANT: this is an internal Storage key, not the display name.
+  return [orderNumber,customer,partNumber].map(sanitize).filter(Boolean).join("-");
+}
 
 async function initializeFolders(orderId,folderPath){
-  // Supabase Storage does not have real empty folders. We create a tiny .keep
-  // object in each prefix so the folder structure is visible in Storage.
+  // Supabase Storage has object prefixes rather than true empty folders.
+  // Create a small hidden-ish marker in each prefix using a Storage-safe path.
   for(const [code,folder] of folderDefinitions){
     const path=`${folderPath}/${folder}/.keep`;
     const {error}=await supabase.storage.from(CONFIG.STORAGE_BUCKET).upload(
-      path,new Blob(["GUVEL PrePPAP folder"],{type:"text/plain"}),
+      path,new Blob(["GUVEL PREPPAP FOLDER"],{type:"text/plain"}),
       {upsert:true,contentType:"text/plain"}
     );
-    if(error) throw error;
+    if(error) throw new Error(`Storage folder ${folder}: ${error.message}`);
   }
 }
 

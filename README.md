@@ -124,3 +124,18 @@ If a user was created manually in Supabase Authentication → Users but GUVEL re
 The browser app only needs the Project URL and anon/publishable key. Never use the service_role key in config.js.
 
 The login screen is now part of the GUVEL visual system and does not expose a separate generic login template.
+
+
+## Storage path fix
+
+Storage folder keys are now separated from the display name.
+
+Example display:
+`PP-2026-002 | Schneider Electric | GHD12275AA`
+
+Internal Storage prefix:
+`PP-2026-002-Schneider-Electric-GHD12275AA`
+
+This prevents characters such as `|`, `/`, `:`, `%`, `&`, quotes, brackets, etc. from becoming invalid Storage keys.
+
+If a previous failed order created no files, simply create it again. If a partial folder was created, it can be left or deleted manually from Storage.
