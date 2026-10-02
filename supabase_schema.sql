@@ -17,6 +17,7 @@ create table if not exists public.preppap_orders (
   qty_shipped numeric(12,2) not null default 0 check (qty_shipped >= 0),
   qty_invoiced numeric(12,2) not null default 0 check (qty_invoiced >= 0),
   priority text not null default 'Normal',
+  status text not null default 'Active' check (status in ('Active','Cancelled')),
   owner text,
   shipping_method text,
   customer_po text,
@@ -82,6 +83,12 @@ create index if not exists idx_preppap_orders_created_at on public.preppap_order
 create index if not exists idx_preppap_tasks_order on public.preppap_tasks(order_id);
 create index if not exists idx_preppap_comp_order on public.preppap_compensations(order_id);
 create index if not exists idx_preppap_docs_order on public.preppap_documents(order_id);
+
+-- V3 order cancellation
+alter table public.preppap_orders add column if not exists status text not null default 'Active';
+update public.preppap_orders set status='Active' where status is null;
+alter table public.preppap_orders drop constraint if exists preppap_orders_status_check;
+alter table public.preppap_orders add constraint preppap_orders_status_check check (status in ('Active','Cancelled'));
 
 -- V2 task evidence fields / hard file limit
 alter table public.preppap_tasks add column if not exists reference text;

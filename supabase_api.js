@@ -67,6 +67,11 @@ export async function uploadTaskDocument(dbOrderId,taskCode,file,orderFolder){
   const {data,error:de}=await supabase.from("preppap_documents").insert({order_id:dbOrderId,task_code:taskCode,document_name:file.name,storage_path:path,content_type:file.type,size_bytes:file.size,uploaded_by:userData.user?.id||null}).select().single();
   if(de){await supabase.storage.from(CONFIG.STORAGE_BUCKET).remove([path]);throw de;}return data;
 }
+export async function cancelOrder(orderId){
+  const {data,error}=await supabase.from("preppap_orders").update({status:"Cancelled"}).eq("id",orderId).select().single();
+  if(error)throw error;
+  return data;
+}
 export async function updateTask(taskId,payload){const {data,error}=await supabase.from("preppap_tasks").update(payload).eq("id",taskId).select().single();if(error)throw error;return data;}
 export async function completeTask(taskId,orderId,taskCode,details){
   const {count,error}=await supabase.from("preppap_documents").select("id",{count:"exact",head:true}).eq("order_id",orderId).eq("task_code",taskCode);

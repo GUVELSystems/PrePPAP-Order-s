@@ -158,3 +158,11 @@ If a previous failed order created no files, simply create it again. If a partia
 - If the database currently contains only old/demo records, run `CLEAN_START.sql` once.
 - Replace the GitHub Pages files with this package.
 - Keep `config.js` with your existing Supabase URL and anon/publishable key.
+
+## V3 LIGHT changes
+
+- PrePPAP detail can be closed with `×` so another order can be selected.
+- Portal uses a light GUVEL interface with cyan/red accents.
+- PO Type is now only `Invoice vs PO` and `PO vs Invoice`.
+- PrePPAP Orders can be cancelled. Cancelled orders are excluded from dashboard metrics and active Evidence Flow/tasks.
+- Evidence Flow rows are selectable and route to the same PrePPAP order gate, where the evidence upload/completion is performed.
