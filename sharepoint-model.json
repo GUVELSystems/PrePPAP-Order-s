@@ -1,0 +1,445 @@
+{
+  "site": {
+    "name": "GUVEL PrePPAP",
+    "purpose": "Central source of truth for PrePPAP orders, tasks, PO balances, compensation and shipments."
+  },
+  "lists": [
+    {
+      "name": "PrePPAP Orders",
+      "purpose": "One record per PrePPAP order.",
+      "columns": [
+        [
+          "PrePPAPID",
+          "Single line of text",
+          "Required",
+          "Unique business ID, e.g. PP-2026-001"
+        ],
+        [
+          "Title",
+          "Single line of text",
+          "Required",
+          "Use same value as PrePPAPID or short order title"
+        ],
+        [
+          "Customer",
+          "Single line of text",
+          "Required",
+          "Customer name"
+        ],
+        [
+          "PartNumber",
+          "Single line of text",
+          "Required",
+          "Part number"
+        ],
+        [
+          "Revision",
+          "Single line of text",
+          "Optional",
+          "Drawing/revision"
+        ],
+        [
+          "Purpose",
+          "Choice",
+          "Required",
+          "Prototype; Validation; PPAP; Pre-Production; Sample; Other"
+        ],
+        [
+          "RequestDate",
+          "Date",
+          "Required",
+          "Order/request date"
+        ],
+        [
+          "RequiredDate",
+          "Date",
+          "Optional",
+          "Required completion/shipment date"
+        ],
+        [
+          "QtyRequested",
+          "Number",
+          "Required",
+          "Total requested quantity"
+        ],
+        [
+          "CustomerPO",
+          "Single line of text",
+          "Optional",
+          "Customer PO"
+        ],
+        [
+          "CustomerPOQty",
+          "Number",
+          "Optional",
+          "Customer PO quantity"
+        ],
+        [
+          "PrePPAPRequest",
+          "Single line of text",
+          "Optional",
+          "MWS → MES request reference"
+        ],
+        [
+          "MESPO",
+          "Single line of text",
+          "Optional",
+          "MES → MWS PO"
+        ],
+        [
+          "MESPOQty",
+          "Number",
+          "Optional",
+          "MES PO quantity"
+        ],
+        [
+          "MWSInvoice",
+          "Single line of text",
+          "Optional",
+          "MWS → MES invoice"
+        ],
+        [
+          "MWSInvoiceQty",
+          "Number",
+          "Optional",
+          "MWS invoice quantity"
+        ],
+        [
+          "ShippingMethod",
+          "Choice",
+          "Required",
+          "Monterrey → Customer; MWS → Customer"
+        ],
+        [
+          "FedExTracking",
+          "Single line of text",
+          "Optional",
+          "FedEx guide/tracking"
+        ],
+        [
+          "QtyShipped",
+          "Number",
+          "Required",
+          "Total shipped quantity"
+        ],
+        [
+          "QtyInvoiced",
+          "Number",
+          "Required",
+          "Total invoiced to customer"
+        ],
+        [
+          "Priority",
+          "Choice",
+          "Required",
+          "Low; Normal; High; Critical"
+        ],
+        [
+          "Owner",
+          "Choice",
+          "Required",
+          "MES; MWS; Quality; Engineering; Purchasing; Logistics; Finance"
+        ],
+        [
+          "Status",
+          "Choice",
+          "Required",
+          "Not Started; In Progress; Waiting; Completed; Cancelled"
+        ],
+        [
+          "FolderLink",
+          "Hyperlink",
+          "Optional",
+          "SharePoint order folder"
+        ],
+        [
+          "Comments",
+          "Multiple lines of text",
+          "Optional",
+          "General notes"
+        ]
+      ]
+    },
+    {
+      "name": "PrePPAP Tasks",
+      "purpose": "Milestone/task control for each PrePPAP order.",
+      "columns": [
+        [
+          "Title",
+          "Single line of text",
+          "Required",
+          "Task name"
+        ],
+        [
+          "PrePPAPID",
+          "Single line of text",
+          "Required",
+          "Business ID of parent order"
+        ],
+        [
+          "TaskKey",
+          "Single line of text",
+          "Required",
+          "Quote; CustomerPO; PrePPAPRequest; MESPO; MWSInvoice; Shipping; FedEx; MESInvoice"
+        ],
+        [
+          "FromParty",
+          "Single line of text",
+          "Required",
+          "MES; MWS; Customer; Logistics"
+        ],
+        [
+          "ToParty",
+          "Single line of text",
+          "Required",
+          "MES; MWS; Customer"
+        ],
+        [
+          "DueDate",
+          "Date",
+          "Optional",
+          "Task due date"
+        ],
+        [
+          "CompletedDate",
+          "Date",
+          "Optional",
+          "Actual completion date"
+        ],
+        [
+          "Status",
+          "Choice",
+          "Required",
+          "Not Started; In Progress; Waiting; Completed; Cancelled"
+        ],
+        [
+          "Reference",
+          "Single line of text",
+          "Optional",
+          "PO/invoice/tracking/reference"
+        ],
+        [
+          "Link",
+          "Hyperlink",
+          "Optional",
+          "Document or folder"
+        ],
+        [
+          "Owner",
+          "Choice",
+          "Optional",
+          "Responsible area"
+        ],
+        [
+          "Comments",
+          "Multiple lines of text",
+          "Optional",
+          "Task notes"
+        ]
+      ]
+    },
+    {
+      "name": "PO Balances",
+      "purpose": "Quantity balance and compensation control.",
+      "columns": [
+        [
+          "Title",
+          "Single line of text",
+          "Required",
+          "PO number or balance title"
+        ],
+        [
+          "PrePPAPID",
+          "Single line of text",
+          "Required",
+          "Parent PrePPAP"
+        ],
+        [
+          "POType",
+          "Choice",
+          "Required",
+          "Customer PO; MES PO to MWS; Other"
+        ],
+        [
+          "PONumber",
+          "Single line of text",
+          "Required",
+          "PO being balanced"
+        ],
+        [
+          "PartNumber",
+          "Single line of text",
+          "Required",
+          "Part number"
+        ],
+        [
+          "OrderedQty",
+          "Number",
+          "Required",
+          "Original PO quantity"
+        ],
+        [
+          "DeliveredQty",
+          "Number",
+          "Required",
+          "Quantity delivered/shipped against this PO"
+        ],
+        [
+          "RemainingQty",
+          "Calculated",
+          "Required",
+          "MAX(0, OrderedQty - DeliveredQty)"
+        ],
+        [
+          "CompensationAction",
+          "Choice",
+          "Optional",
+          "Ship with next PrePPAP order; Ship separately; Credit; Cancel; Transfer to another PO; Other"
+        ],
+        [
+          "RelatedPO",
+          "Single line of text",
+          "Optional",
+          "PO used for compensation"
+        ],
+        [
+          "CompensationStatus",
+          "Choice",
+          "Required",
+          "Open; Partial; Closed"
+        ],
+        [
+          "ResolutionDate",
+          "Date",
+          "Optional",
+          "Date balance was resolved"
+        ],
+        [
+          "EvidenceLink",
+          "Hyperlink",
+          "Optional",
+          "Evidence/document"
+        ],
+        [
+          "Comments",
+          "Multiple lines of text",
+          "Optional",
+          "Reason/action notes"
+        ]
+      ]
+    },
+    {
+      "name": "Shipments",
+      "purpose": "Shipment-level control, especially MWS → Customer.",
+      "columns": [
+        [
+          "Title",
+          "Single line of text",
+          "Required",
+          "Shipment reference"
+        ],
+        [
+          "PrePPAPID",
+          "Single line of text",
+          "Required",
+          "Parent PrePPAP"
+        ],
+        [
+          "ShipDate",
+          "Date",
+          "Required",
+          "Shipment date"
+        ],
+        [
+          "ShippingMethod",
+          "Choice",
+          "Required",
+          "Monterrey → Customer; MWS → Customer"
+        ],
+        [
+          "From",
+          "Single line of text",
+          "Required",
+          "Origin"
+        ],
+        [
+          "To",
+          "Single line of text",
+          "Required",
+          "Destination/customer"
+        ],
+        [
+          "PartNumber",
+          "Single line of text",
+          "Required",
+          "Part number"
+        ],
+        [
+          "Purpose",
+          "Choice",
+          "Required",
+          "Prototype; Validation; PPAP; Pre-Production; Sample; Other"
+        ],
+        [
+          "QtyShipped",
+          "Number",
+          "Required",
+          "Quantity in shipment"
+        ],
+        [
+          "FedExTracking",
+          "Single line of text",
+          "Optional",
+          "FedEx tracking number"
+        ],
+        [
+          "ReferencePartNumber",
+          "Single line of text",
+          "Optional",
+          "Reference required by customer"
+        ],
+        [
+          "ReferencePurpose",
+          "Single line of text",
+          "Optional",
+          "Purpose required by customer"
+        ],
+        [
+          "ShipmentFolder",
+          "Hyperlink",
+          "Optional",
+          "Shipment evidence folder"
+        ],
+        [
+          "Comments",
+          "Multiple lines of text",
+          "Optional",
+          "Shipment notes"
+        ]
+      ]
+    }
+  ],
+  "documentLibrary": {
+    "name": "PrePPAP Orders",
+    "structure": [
+      "PP-YYYY-###/",
+      "PP-YYYY-###/01_Quote/",
+      "PP-YYYY-###/02_Customer_PO/",
+      "PP-YYYY-###/03_PrePPAP_Request/",
+      "PP-YYYY-###/04_MES_PO_to_MWS/",
+      "PP-YYYY-###/05_MWS_Invoice/",
+      "PP-YYYY-###/06_Shipping/",
+      "PP-YYYY-###/07_MES_Invoice/",
+      "PP-YYYY-###/08_Compensation/"
+    ]
+  },
+  "business_rules": [
+    "PrePPAPID is the business key shared across all lists.",
+    "Qty remaining to ship = QtyRequested - QtyShipped, never below zero.",
+    "Qty remaining to invoice = QtyRequested - QtyInvoiced, never below zero.",
+    "A PO Balance stays Open/Partial until its RemainingQty is zero and a resolution is documented when applicable.",
+    "MWS → Customer shipments must capture Part Number and Purpose references.",
+    "A PrePPAP order should not be Completed while shipment or invoice balance remains.",
+    "SharePoint is the production source of truth; localStorage is only UI/cache state after integration."
+  ]
+}
