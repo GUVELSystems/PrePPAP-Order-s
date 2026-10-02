@@ -1,11 +1,7 @@
-# V7 Migration
+# GUVEL PrePPAP V8
 
-Run `MIGRATION_V7.sql` once in Supabase SQL Editor.
-
-## Fixes
-- Adds `preppap_tasks.reference` and `preppap_tasks.details` for databases created before the evidence metadata migration.
-- Keeps PO Balance types restricted to `Invoice vs PO` and `PO vs Invoice`.
-- Removes automatic PO Balance creation during initial PrePPAP creation.
-- MWS Invoice → MES now captures `Cantidad de PO MES` and `Cantidad Factura MWS` at that gate.
-- If those quantities differ, the system generates/updates the corresponding PO Balance only when that gate is completed.
-- If they match, no balance record is generated.
+- GATE 05 creates a compensation record only when PO MES and MWS Invoice quantities differ and the gate is completed.
+- Add Compensation starts with an Active PrePPAP Order picker; cancelled orders are excluded. Search works by PrePPAP number, customer, part number, or purpose.
+- Compensation form displays PrePPAP Order Number instead of a visible PO Number; the existing PO number is preserved as hidden data for compatibility.
+- Command Center includes Active Balances KPI.
+- Migration preserves all historical compensation rows and removes the restrictive PO Type check that could conflict with legacy values.
