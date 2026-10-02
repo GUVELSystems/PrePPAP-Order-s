@@ -44,6 +44,8 @@ create table if not exists public.preppap_tasks (
   status text not null default 'Not Started',
   due_date date,
   completed_at timestamptz,
+  reference text,
+  details text,
   created_at timestamptz not null default now(),
   unique(order_id, task_code)
 );
@@ -71,7 +73,7 @@ create table if not exists public.preppap_documents (
   document_name text not null,
   storage_path text not null,
   content_type text,
-  size_bytes bigint,
+  size_bytes bigint check (size_bytes is null or size_bytes <= 51200),
   uploaded_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
@@ -80,6 +82,13 @@ create index if not exists idx_preppap_orders_created_at on public.preppap_order
 create index if not exists idx_preppap_tasks_order on public.preppap_tasks(order_id);
 create index if not exists idx_preppap_comp_order on public.preppap_compensations(order_id);
 create index if not exists idx_preppap_docs_order on public.preppap_documents(order_id);
+
+-- V2 task evidence fields / hard file limit
+alter table public.preppap_tasks add column if not exists reference text;
+alter table public.preppap_tasks add column if not exists details text;
+alter table public.preppap_documents drop constraint if exists preppap_documents_size_bytes_check;
+alter table public.preppap_documents add constraint preppap_documents_size_bytes_check
+  check (size_bytes is null or size_bytes <= 51200);
 
 -- Updated-at helper
 create or replace function public.set_updated_at()
@@ -171,7 +180,8 @@ on public.preppap_documents for all to authenticated using (true) with check (tr
 -- Storage bucket. The UI creates the 9 prefixes by uploading .keep files.
 insert into storage.buckets (id, name, public)
 values ('preppap-documents', 'preppap-documents', false)
-on conflict (id) do nothing;
+on conflict (id) do update
+set file_size_limit = 51200;
 
 drop policy if exists "Authenticated users can read PrePPAP files" on storage.objects;
 create policy "Authenticated users can read PrePPAP files"
@@ -200,3 +210,45 @@ using (bucket_id = 'preppap-documents');
 
 -- Optional seed of the standard workflow definitions is kept in the frontend
 -- so the database stays order-specific and lightweight.
+
+-- Database-level enforcement: a gate cannot be completed without evidence.
+create or replace function public.enforce_preppap_task_evidence()
+returns trigger
+language plpgsql
+security definer
+set search_path = public
+as $$
+declare
+  evidence_count integer;
+begin
+  if new.status = 'Completed' then
+    select count(*) into evidence_count
+    from public.preppap_documents
+    where order_id = new.order_id
+      and task_code = (
+        select case new.task_code
+          when 'Quote' then '01_Cotizacion_MES_Cliente'
+          when 'CustomerPO' then '02_PO_Cliente_MES'
+          when 'PrePPAPRequest' then '03_PrePPAP_Order_Request_MWS_MES'
+          when 'MESPO' then '04_PO_MES_MWS'
+          when 'MWSInvoice' then '05_Factura_MWS_MES'
+          when 'Shipping' then '06_Metodo_de_Envio'
+          when 'Monterrey' then '07_Monterrey_Cliente'
+          when 'FedEx' then '08_MWS_Cliente'
+          when 'MESInvoice' then '09_Factura_MES_Cliente'
+          else new.task_code
+        end
+      );
+    if evidence_count = 0 then
+      raise exception 'PREPPAP_EVIDENCE_REQUIRED: Task % cannot be completed without an evidence file.', new.task_code;
+    end if;
+  end if;
+  return new;
+end;
+$$;
+
+drop trigger if exists trg_preppap_task_evidence on public.preppap_tasks;
+create trigger trg_preppap_task_evidence
+before update on public.preppap_tasks
+for each row execute function public.enforce_preppap_task_evidence();
+

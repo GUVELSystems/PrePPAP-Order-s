@@ -139,3 +139,22 @@ Internal Storage prefix:
 This prevents characters such as `|`, `/`, `:`, `%`, `&`, quotes, brackets, etc. from becoming invalid Storage keys.
 
 If a previous failed order created no files, simply create it again. If a partial folder was created, it can be left or deleted manually from Storage.
+
+# V2 FUTURE / Evidence Control
+
+## Changes in this version
+
+1. **Clean start:** `CLEAN_START.sql` removes existing PrePPAP demo/test records and Storage files. It is intentionally separate because it is destructive.
+2. **Evidence gate:** every one of the 9 workflow points opens its own control window.
+3. **Mandatory evidence:** a task cannot be completed without at least one uploaded file.
+4. **Task information:** every gate has a reference field and notes/information field.
+5. **50 KB hard limit:** frontend validation + database check + Supabase Storage bucket limit.
+6. **Futuristic GUVEL UI:** dark command-center layout, cyan/red accents, progress signals, evidence gates and responsive modals.
+7. **Storage-safe paths:** visible PrePPAP names can contain normal business characters, while internal Storage keys remain safe.
+
+## First setup
+
+- Run `supabase_schema.sql` in Supabase SQL Editor.
+- If the database currently contains only old/demo records, run `CLEAN_START.sql` once.
+- Replace the GitHub Pages files with this package.
+- Keep `config.js` with your existing Supabase URL and anon/publishable key.

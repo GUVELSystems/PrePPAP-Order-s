@@ -4,7 +4,7 @@ export const taskDefinitions=[
   ['PrePPAPRequest','PrePPAP Order Request','MWS','MES'],
   ['MESPO','PO MES → MWS','MES','MWS'],
   ['MWSInvoice','Factura MWS → MES','MWS','MES'],
-  ['Shipping','Método de Envío','Logistics','Cliente'],
+  ['Shipping','Método de Envío','Logística','Cliente'],
   ['Monterrey','Monterrey → Cliente: Proceso de MES','MES','Cliente'],
   ['FedEx','Guía FedEx / Referencias','MWS','Cliente'],
   ['MESInvoice','Factura MES → Cliente','MES','Cliente']
@@ -21,3 +21,15 @@ export const folderDefinitions=[
   ['FedEx','08_MWS_Cliente','MWS a Cliente: Guía de FedEx con Referencias'],
   ['MESInvoice','09_Factura_MES_Cliente','Factura MES a Cliente']
 ];
+
+export const taskHints={
+  Quote:{label:'Cotización MES → Cliente',reference:'Número de cotización / referencia comercial',info:'Captura cualquier dato relevante de la cotización.'},
+  CustomerPO:{label:'PO Cliente → MES',reference:'Número de PO del cliente',info:'Número de PO, cantidad autorizada y cualquier condición relevante.'},
+  PrePPAPRequest:{label:'PrePPAP Order Request',reference:'Número de solicitud MWS → MES',info:'Referencia de la solicitud y alcance del pedido.'},
+  MESPO:{label:'PO MES → MWS',reference:'Número de PO MES → MWS',info:'PO, cantidad solicitada y condiciones de entrega.'},
+  MWSInvoice:{label:'Factura MWS → MES',reference:'Número de factura MWS',info:'Factura, cantidad facturada y observaciones.'},
+  Shipping:{label:'Método de Envío',reference:'Guía / referencia logística',info:'Método, transportista y cualquier dato de embarque.'},
+  Monterrey:{label:'Monterrey → Cliente: Proceso de MES',reference:'Referencia del proceso / envío',info:'Información del proceso realizado en Monterrey.'},
+  FedEx:{label:'Guía FedEx / Referencias',reference:'Número de guía FedEx',info:'Debe contener la referencia de número de parte + propósito.'},
+  MESInvoice:{label:'Factura MES → Cliente',reference:'Número de factura MES',info:'Factura, cantidad facturada y observaciones.'}
+};
