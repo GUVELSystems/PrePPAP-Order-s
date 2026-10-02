@@ -1,37 +1,46 @@
-# GUVEL PrePPAP Tracker V1
+# GUVEL PrePPAP Tracker V2
 
-GitHub Pages-ready prototype for PrePPAP Orders.
+## Added in this version
 
-## Current architecture
-GitHub Pages → Vanilla JS → localStorage (demo) / SharePoint adapter → Microsoft Graph.
+### 1. New PrePPAP Order
+A full form captures:
+- Customer
+- Part Number / Revision
+- Purpose
+- Request / Required dates
+- Requested quantity
+- Priority / Owner
+- Shipping method
+- Customer PO and quantity
+- PrePPAP Request
+- MES PO and quantity
+- MWS Invoice and quantity
+- FedEx / tracking
+- Shipped / invoiced quantities
+- SharePoint folder link
+- Comments
 
-The UI is already separated from the data layer. `sharepoint.js` contains the Graph adapter, so connecting SharePoint does not require rebuilding the interface.
+### 2. Compensation Management
+A dedicated PO Balance screen supports:
+- PO type
+- PO number
+- Ordered quantity
+- Delivered/shipped quantity
+- Automatic remaining quantity
+- Compensation action
+- Related PO
+- Resolution date
+- Open / Partial / Closed status
+- Comments
 
-## Demo
-Open `index.html` through a static web server. Example:
+Example: 5 ordered, 4 delivered = 1 remaining. The balance stays visible until dispositioned.
 
+## Run
+Use a local static server because the project uses ES modules:
 `python -m http.server 8080`
 
-Then browse to `http://localhost:8080`.
-
 ## GitHub Pages
-Upload the folder contents to a repository and enable Pages from the `main` branch root.
+Upload all files to a repository and enable GitHub Pages from the root of `main`.
 
-## SharePoint phase
-1. Register a SPA in Microsoft Entra ID.
-2. Add the GitHub Pages URL as the SPA redirect URI.
-3. Put the Application (client) ID in `config.js`.
-4. Create SharePoint lists for Orders, Tasks, PO Balances and Shipments.
-5. Put the site/list IDs in `config.js`.
-6. Set `DEMO_MODE:false`.
-
-Suggested lists:
-- PrePPAP Orders
-- PrePPAP Tasks
-- PO Balances
-- Shipments
-
-The production source of truth should be SharePoint; localStorage should only keep UI preferences/cache.
-
-## Important V1 limitation
-The compensation screen currently calculates and displays the remaining quantity. The next implementation step should add a persistent compensation record with: Action, Related PO, Resolution Date, Status and Evidence Link.
+## SharePoint
+Set `DEMO_MODE=false` in `config.js`, then configure the Microsoft Entra SPA client ID and SharePoint site/list IDs. `sharepoint.js` contains the Microsoft Graph adapter. SharePoint becomes the source of truth; localStorage remains only a prototype/UI fallback.
