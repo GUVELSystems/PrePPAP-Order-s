@@ -1,0 +1,1 @@
+export const CONFIG={DEMO_MODE:true,msal:{clientId:"",authority:"https://login.microsoftonline.com/common",redirectUri:location.origin+location.pathname},sharePoint:{graphBase:"https://graph.microsoft.com/v1.0",siteId:"",ordersListId:"",tasksListId:"",balancesListId:"",shipmentsListId:"",documentsDriveId:""},scopes:["User.Read","Sites.ReadWrite.All"]};

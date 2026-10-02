@@ -1,0 +1,1 @@
+const KEY="guvel_preppap_orders_v1";export function loadLocalOrders(f){try{return JSON.parse(localStorage.getItem(KEY))||f}catch{return f}}export function saveLocalOrders(x){localStorage.setItem(KEY,JSON.stringify(x))}
