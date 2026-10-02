@@ -1,2 +1,23 @@
-export const demoOrders=[{id:'PP-2026-001',customer:'Example Customer',partNumber:'GHD12275AA',revision:'A',purpose:'Pre-Production',requestDate:'2026-10-02',requiredDate:'2026-10-09',qtyRequested:5,customerPO:'CUST-PO-001',customerPOQty:5,prePPAPRequest:'PPR-001',mesPO:'MES-PO-001',mesPOQty:5,mwsInvoice:'MWS-INV-001',mwsInvoiceQty:5,shippingMethod:'MWS → Customer',fedex:'FEDEX-EXAMPLE',qtyShipped:4,qtyInvoiced:4,priority:'High',owner:'Logistics',folderLink:'#',quoteLink:'#',customerPOLink:'#',prePPAPRequestLink:'#',mesPOLink:'#',mwsInvoiceLink:'#',mesInvoiceLink:'#',comments:'Demo order: 1 pc remains for compensation.',balances:[{poType:'MES PO to MWS',poNumber:'MES-PO-001',orderedQty:5,deliveredQty:4,action:'Ship with next PrePPAP order',relatedPO:'',resolutionDate:'',status:'Open',comments:'1 pc pending'}]} ,{id:'PP-2026-002',customer:'Stillwell',partNumber:'381PSP',revision:'B',purpose:'PPAP',requestDate:'2026-10-01',requiredDate:'2026-10-15',qtyRequested:20,customerPO:'ST-PO-020',customerPOQty:20,prePPAPRequest:'PPR-002',mesPO:'MES-PO-002',mesPOQty:20,mwsInvoice:'MWS-INV-002',mwsInvoiceQty:20,shippingMethod:'Monterrey → Customer',fedex:'',qtyShipped:20,qtyInvoiced:0,priority:'Normal',owner:'Quality',folderLink:'#',quoteLink:'#',customerPOLink:'#',prePPAPRequestLink:'#',mesPOLink:'#',mwsInvoiceLink:'#',mesInvoiceLink:'#',comments:'Awaiting customer invoice.',balances:[]}];
-export const taskDefinitions=[['Quote','Cotización MES → Cliente','MES','Cliente'],['CustomerPO','PO Cliente → MES','Cliente','MES'],['PrePPAPRequest','PrePPAP Order Request','MWS','MES'],['MESPO','PO MES → MWS','MES','MWS'],['MWSInvoice','Factura MWS → MES','MWS','MES'],['Shipping','Método de Envío','Logistics','Cliente'],['FedEx','Guía FedEx / Referencias','MWS','Cliente'],['MESInvoice','Factura MES → Cliente','MES','Cliente']];
+export const taskDefinitions=[
+  ['Quote','Cotización MES → Cliente','MES','Cliente'],
+  ['CustomerPO','PO Cliente → MES','Cliente','MES'],
+  ['PrePPAPRequest','PrePPAP Order Request','MWS','MES'],
+  ['MESPO','PO MES → MWS','MES','MWS'],
+  ['MWSInvoice','Factura MWS → MES','MWS','MES'],
+  ['Shipping','Método de Envío','Logistics','Cliente'],
+  ['Monterrey','Monterrey → Cliente: Proceso de MES','MES','Cliente'],
+  ['FedEx','Guía FedEx / Referencias','MWS','Cliente'],
+  ['MESInvoice','Factura MES → Cliente','MES','Cliente']
+];
+
+export const folderDefinitions=[
+  ['Quote','01_Cotizacion_MES_Cliente','Cotización MES a Cliente'],
+  ['CustomerPO','02_PO_Cliente_MES','PO Cliente a MES'],
+  ['PrePPAPRequest','03_PrePPAP_Order_Request_MWS_MES','PrePPAP Order Request MWS a MES'],
+  ['MESPO','04_PO_MES_MWS','PO MES a MWS'],
+  ['MWSInvoice','05_Factura_MWS_MES','Factura MWS a MES'],
+  ['Shipping','06_Metodo_de_Envio','Método de Envío'],
+  ['Monterrey','07_Monterrey_Cliente','Monterrey a Cliente: Proceso de MES'],
+  ['FedEx','08_MWS_Cliente','MWS a Cliente: Guía de FedEx con Referencias'],
+  ['MESInvoice','09_Factura_MES_Cliente','Factura MES a Cliente']
+];

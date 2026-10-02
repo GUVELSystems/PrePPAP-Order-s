@@ -1,46 +1,109 @@
-# GUVEL PrePPAP Tracker V2
+# GUVEL PrePPAP Tracker — Supabase Edition
 
-## Added in this version
+This version keeps the visual structure of GUVEL PrePPAP Tracker V2 FIXED and replaces localStorage/SharePoint persistence with Supabase.
 
-### 1. New PrePPAP Order
-A full form captures:
-- Customer
-- Part Number / Revision
-- Purpose
-- Request / Required dates
-- Requested quantity
-- Priority / Owner
-- Shipping method
-- Customer PO and quantity
-- PrePPAP Request
-- MES PO and quantity
-- MWS Invoice and quantity
-- FedEx / tracking
-- Shipped / invoiced quantities
-- SharePoint folder link
-- Comments
+## Architecture
 
-### 2. Compensation Management
-A dedicated PO Balance screen supports:
-- PO type
-- PO number
-- Ordered quantity
-- Delivered/shipped quantity
-- Automatic remaining quantity
-- Compensation action
-- Related PO
-- Resolution date
-- Open / Partial / Closed status
-- Comments
+- GitHub Pages: frontend
+- Supabase Auth: user login
+- Supabase PostgreSQL: orders, tasks, compensation, document metadata
+- Supabase Storage: PrePPAP documents and folder-like prefixes
+- localStorage: NOT used for application data
 
-Example: 5 ordered, 4 delivered = 1 remaining. The balance stays visible until dispositioned.
+## 1. Create Supabase project
 
-## Run
-Use a local static server because the project uses ES modules:
-`python -m http.server 8080`
+Create a project in Supabase.
 
-## GitHub Pages
-Upload all files to a repository and enable GitHub Pages from the root of `main`.
+Then open:
+SQL Editor → New query
 
-## SharePoint
-Set `DEMO_MODE=false` in `config.js`, then configure the Microsoft Entra SPA client ID and SharePoint site/list IDs. `sharepoint.js` contains the Microsoft Graph adapter. SharePoint becomes the source of truth; localStorage remains only a prototype/UI fallback.
+Paste and run `supabase_schema.sql`.
+
+## 2. Create your first user
+
+Supabase Dashboard → Authentication → Users → Add user.
+
+Use the email/password you want for GUVEL.
+
+## 3. Get API values
+
+Supabase Dashboard → Project Settings → API
+
+Copy:
+- Project URL
+- anon / publishable key
+
+Put them in `config.js`:
+
+SUPABASE_URL
+SUPABASE_ANON_KEY
+
+Never put the service_role key in this project.
+
+## 4. Run locally
+
+Because ES modules are used, serve the folder from a local HTTP server. Do not open index.html directly with file://.
+
+Example:
+python -m http.server 8080
+
+Then open:
+http://localhost:8080
+
+## 5. GitHub Pages
+
+Upload the project to a GitHub repository and enable GitHub Pages.
+
+Add the GitHub Pages URL to:
+Supabase → Authentication → URL Configuration → Site URL
+
+If you use email confirmation or redirects, add the same URL under Redirect URLs.
+
+## 6. Storage model
+
+Supabase Storage does not have true empty folders. GUVEL creates a `.keep` object in each of the 9 prefixes so they appear as folders.
+
+Example:
+
+preppap-documents/
+  PP-2026-001 | Customer | Part Number/
+    01_Cotizacion_MES_Cliente/
+    02_PO_Cliente_MES/
+    ...
+    09_Factura_MES_Cliente/
+
+## 7. Important security note
+
+Use only the Supabase anon/publishable key in the browser.
+
+Never expose:
+- service_role key
+- database password
+- private server credentials
+
+RLS policies in the SQL restrict application data to authenticated users.
+
+## Current implementation
+
+Included:
+- Supabase authentication
+- Order CRUD creation
+- PostgreSQL persistence
+- Automatic PrePPAP numbering
+- 9 Storage prefixes per order
+- Automatic compensation record for partial MES PO → MWS quantity
+- Compensation editing
+- Task persistence
+- Document metadata
+- Document upload and signed download
+- Dashboard / Orders / Tasks / Compensation / Shipments views
+- Existing GUVEL visual structure preserved
+
+## Next optional hardening
+
+Before company-wide deployment:
+- Add role-based permissions (Admin, Quality, Engineering, Purchasing, Logistics, Finance, Viewer)
+- Add audit trail
+- Add document-category selection in upload
+- Add edit-order workflow
+- Add automatic task status transitions

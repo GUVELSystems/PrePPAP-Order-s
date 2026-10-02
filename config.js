@@ -1,1 +1,10 @@
-export const CONFIG={DEMO_MODE:true,msal:{clientId:'',authority:'https://login.microsoftonline.com/common',redirectUri:location.origin+location.pathname},sharePoint:{graphBase:'https://graph.microsoft.com/v1.0',siteId:'',ordersListId:'',tasksListId:'',balancesListId:'',shipmentsListId:'',documentsDriveId:''},scopes:['User.Read','Sites.ReadWrite.All']};
+export const CONFIG = {
+  // Fill these two values from Supabase:
+  SUPABASE_URL: "https://YOUR_PROJECT.supabase.co",
+  SUPABASE_ANON_KEY: "YOUR_SUPABASE_ANON_KEY",
+
+  STORAGE_BUCKET: "preppap-documents",
+
+  // Optional: leave false until the Supabase project is ready.
+  DEMO_MODE: false
+};
