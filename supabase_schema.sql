@@ -118,21 +118,47 @@ create trigger trg_preppap_comp_updated
 before update on public.preppap_compensations
 for each row execute function public.set_updated_at();
 
--- Order number generator: PP-YYYY-NNN
+-- Safe yearly order-number allocator
+create table if not exists public.preppap_order_sequences (
+  year integer primary key,
+  last_number integer not null default 0 check (last_number >= 0)
+);
+
+do $$
+declare
+  y integer := extract(year from current_date)::integer;
+  current_max integer;
+begin
+  select coalesce(max((regexp_match(order_number, '^PP-' || y::text || '-([0-9]+)$'))[1]::integer),0)
+    into current_max
+  from public.preppap_orders;
+  insert into public.preppap_order_sequences(year,last_number)
+  values(y,current_max)
+  on conflict (year) do nothing;
+end $$;
+
 create or replace function public.next_preppap_order_number()
 returns text
 language plpgsql
+security definer
+set search_path = public
 as $$
 declare
-  y text := to_char(current_date, 'YYYY');
+  y integer := extract(year from current_date)::integer;
   n integer;
 begin
-  select coalesce(max((regexp_match(order_number, '^PP-' || y || '-([0-9]+)$'))[1]::integer), 0) + 1
-    into n
-  from public.preppap_orders;
-  return 'PP-' || y || '-' || lpad(n::text, 3, '0');
+  insert into public.preppap_order_sequences(year,last_number)
+  values (y,0)
+  on conflict (year) do nothing;
+  update public.preppap_order_sequences
+     set last_number = last_number + 1
+   where year = y
+   returning last_number into n;
+  return 'PP-' || y::text || '-' || lpad(n::text,3,'0');
 end;
 $$;
+revoke all on function public.next_preppap_order_number() from public;
+grant execute on function public.next_preppap_order_number() to authenticated;
 
 -- RLS
 alter table public.preppap_orders enable row level security;

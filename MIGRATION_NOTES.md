@@ -1,29 +1,18 @@
-# GUVEL PrePPAP Tracker — V4
+# GUVEL PrePPAP Tracker V6
 
-## Required database step
-For an existing Supabase project, run `MIGRATION_V4.sql` once in **Supabase → SQL Editor**. This adds `preppap_orders.status`, keeps existing data, and reloads the PostgREST schema cache.
+## Required migration
+Run `MIGRATION_V6.sql` once in Supabase SQL Editor.
 
-### Cancellation behavior
-Cancelling a PrePPAP only changes `preppap_orders.status` to `Cancelled`.
+### What V6 fixes
+- Replaces the `MAX()+1` / advisory-lock order number allocator with a dedicated yearly sequence table.
+- Existing `PP-YYYY-NNN` orders are scanned and the current year's sequence is initialized above the highest existing number.
+- Concurrent order creation receives unique consecutive numbers.
+- Cancelled order numbers are never reused.
+- Existing orders, documents, tasks, compensations and Storage files are not deleted.
 
-It does **not** delete:
-- uploaded documents
-- Storage files
-- evidence records
-- tasks
-- PO compensation records
-- historical order information
-
-Cancelled orders are excluded from the active Dashboard and Evidence Flow.
-
-## Clean start
-`CLEAN_START.sql` now deletes only application rows. Supabase intentionally blocks direct SQL deletes from `storage.objects`.
-
-If you also need to remove old/demo files from the Storage bucket, run `CLEAN_STORAGE.html` in a browser and sign in with the same Supabase user. It removes bucket objects through the Storage API.
-
-## Export
-PrePPAP Orders now has **Export ZIP**. The download is named:
-
-`PrePPAP Order YYYY-MM-DD.zip`
-
-Each PrePPAP gets its own folder, and each evidence file is stored under its corresponding workflow folder.
+## UI changes
+- New PrePPAP Order form only asks for:
+  Customer, Part Number, Revision, Purpose, Request Date, Required Date, Qty Requested, Priority, Owner, Shipping Method.
+- The rest of the PrePPAP Order record remains available after creation.
+- Evidence upload supports click-to-select and drag & drop.
+- 50 KB maximum remains enforced for every evidence file.
