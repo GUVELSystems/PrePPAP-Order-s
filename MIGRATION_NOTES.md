@@ -1,23 +1,29 @@
-# Migration notes
+# GUVEL PrePPAP Tracker — V4
 
-Removed from the runtime:
-- SharePoint adapter
-- MSAL
-- localStorage persistence
+## Required database step
+For an existing Supabase project, run `MIGRATION_V4.sql` once in **Supabase → SQL Editor**. This adds `preppap_orders.status`, keeps existing data, and reloads the PostgREST schema cache.
 
-The visual baseline remains the fixed V2 portal. The new runtime imports:
-- supabase.js
-- supabase_api.js
-- config.js
-- data.js
+### Cancellation behavior
+Cancelling a PrePPAP only changes `preppap_orders.status` to `Cancelled`.
 
-The database is now the source of truth.
+It does **not** delete:
+- uploaded documents
+- Storage files
+- evidence records
+- tasks
+- PO compensation records
+- historical order information
 
-## V2 FUTURE changes
+Cancelled orders are excluded from the active Dashboard and Evidence Flow.
 
-- `preppap_tasks.reference` and `preppap_tasks.details` added.
-- Evidence is mandatory for completion.
-- DB trigger blocks completion without evidence.
-- All evidence files limited to 50 KB.
-- Storage bucket configured with 51200-byte file limit.
-- `CLEAN_START.sql` provided for destructive cleanup of old demo/test data.
+## Clean start
+`CLEAN_START.sql` now deletes only application rows. Supabase intentionally blocks direct SQL deletes from `storage.objects`.
+
+If you also need to remove old/demo files from the Storage bucket, run `CLEAN_STORAGE.html` in a browser and sign in with the same Supabase user. It removes bucket objects through the Storage API.
+
+## Export
+PrePPAP Orders now has **Export ZIP**. The download is named:
+
+`PrePPAP Order YYYY-MM-DD.zip`
+
+Each PrePPAP gets its own folder, and each evidence file is stored under its corresponding workflow folder.

@@ -1,12 +1,20 @@
--- GUVEL PrePPAP / CLEAN START
--- DESTRUCTIVE: removes ALL PrePPAP orders, tasks, compensations, documents
--- and ALL files from the PrePPAP Storage bucket.
--- Run ONLY once if the current project contains demo/test data you want removed.
+-- GUVEL PrePPAP / CLEAN START V4
+-- Removes PrePPAP database records, but intentionally does NOT touch storage.objects.
+-- Supabase blocks direct SQL deletion from storage.objects.
+-- After running this file, open CLEAN_STORAGE.html and sign in to remove the
+-- corresponding files through the official Storage API.
 
+begin;
+
+delete from public.preppap_documents;
+delete from public.preppap_compensations;
+delete from public.preppap_tasks;
 delete from public.preppap_orders;
-delete from storage.objects where bucket_id = 'preppap-documents';
 
--- The bucket remains configured at 50 KB.
 update storage.buckets
 set file_size_limit = 51200
 where id = 'preppap-documents';
+
+commit;
+
+notify pgrst, 'reload schema';
