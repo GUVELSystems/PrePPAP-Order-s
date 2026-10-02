@@ -1,18 +1,11 @@
-# GUVEL PrePPAP Tracker V6
+# V7 Migration
 
-## Required migration
-Run `MIGRATION_V6.sql` once in Supabase SQL Editor.
+Run `MIGRATION_V7.sql` once in Supabase SQL Editor.
 
-### What V6 fixes
-- Replaces the `MAX()+1` / advisory-lock order number allocator with a dedicated yearly sequence table.
-- Existing `PP-YYYY-NNN` orders are scanned and the current year's sequence is initialized above the highest existing number.
-- Concurrent order creation receives unique consecutive numbers.
-- Cancelled order numbers are never reused.
-- Existing orders, documents, tasks, compensations and Storage files are not deleted.
-
-## UI changes
-- New PrePPAP Order form only asks for:
-  Customer, Part Number, Revision, Purpose, Request Date, Required Date, Qty Requested, Priority, Owner, Shipping Method.
-- The rest of the PrePPAP Order record remains available after creation.
-- Evidence upload supports click-to-select and drag & drop.
-- 50 KB maximum remains enforced for every evidence file.
+## Fixes
+- Adds `preppap_tasks.reference` and `preppap_tasks.details` for databases created before the evidence metadata migration.
+- Keeps PO Balance types restricted to `Invoice vs PO` and `PO vs Invoice`.
+- Removes automatic PO Balance creation during initial PrePPAP creation.
+- MWS Invoice → MES now captures `Cantidad de PO MES` and `Cantidad Factura MWS` at that gate.
+- If those quantities differ, the system generates/updates the corresponding PO Balance only when that gate is completed.
+- If they match, no balance record is generated.

@@ -45,11 +45,6 @@ export async function createOrder(input){
   try{
     const taskRows=taskDefinitions.map(t=>({order_id:order.id,task_code:t[0],task_name:t[1],from_party:t[2],to_party:t[3],status:"Not Started",due_date:input.requiredDate||null}));
     const {error:taskError}=await supabase.from("preppap_tasks").insert(taskRows);if(taskError)throw taskError;
-    if(n(input.mesPOQty)>n(input.qtyShipped)){
-      const {error:e}=await supabase.from("preppap_compensations").insert({order_id:order.id,po_type:"MES PO to MWS",po_number:input.mesPO||null,
-        ordered_qty:n(input.mesPOQty),delivered_qty:n(input.qtyShipped),status:"Open",comments:"Automatically created from partial quantity."});
-      if(e)throw e;
-    }
     await initializeFolders(folderPath);
   }catch(e){await supabase.from("preppap_orders").delete().eq("id",order.id);throw e;}
   return orderNumber;
@@ -73,9 +68,23 @@ export async function cancelOrder(orderId){
   return data;
 }
 export async function updateTask(taskId,payload){const {data,error}=await supabase.from("preppap_tasks").update(payload).eq("id",taskId).select().single();if(error)throw error;return data;}
-export async function completeTask(taskId,orderId,taskCode,details){
+export async function completeTask(taskId,orderId,taskCode,details,gateData={}){
   const {count,error}=await supabase.from("preppap_documents").select("id",{count:"exact",head:true}).eq("order_id",orderId).eq("task_code",taskCode);
   if(error)throw error;if(!count)throw new Error("No puedes completar esta etapa sin subir al menos un archivo de evidencia.");
+  if(taskCode==="MWSInvoice"){
+    const poQty=Number(gateData.mesPOQty||0), invoiceQty=Number(gateData.mwsInvoiceQty||0);
+    const {error:oe}=await supabase.from("preppap_orders").update({mes_po_qty:poQty,mws_invoice_qty:invoiceQty}).eq("id",orderId);
+    if(oe)throw oe;
+    const remaining=Math.abs(poQty-invoiceQty);
+    const poType=invoiceQty<poQty?"PO vs Invoice":"Invoice vs PO";
+    const {data:existing,error:be}=await supabase.from("preppap_compensations").select("id").eq("order_id",orderId).eq("po_type",poType).maybeSingle();
+    if(be)throw be;
+    if(remaining>0){
+      const payload={po_type:poType,po_number:gateData.mesPO||null,ordered_qty:poQty,delivered_qty:invoiceQty,status:"Open",comments:`Automatically generated from MWS Invoice → MES. PO MES: ${poQty} pcs; Invoice MWS: ${invoiceQty} pcs. Balance required: ${remaining} pcs.`};
+      const result=existing?await supabase.from("preppap_compensations").update(payload).eq("id",existing.id):await supabase.from("preppap_compensations").insert({...payload,order_id:orderId});
+      if(result.error)throw result.error;
+    }
+  }
   return updateTask(taskId,{status:"Completed",completed_at:new Date().toISOString(),reference:details.reference||null,details:details.details||null});
 }
 export async function reopenTask(taskId){return updateTask(taskId,{status:"In Progress",completed_at:null});}
