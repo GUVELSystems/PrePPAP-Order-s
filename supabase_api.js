@@ -2,7 +2,7 @@ import { supabase } from "./supabase.js";
 import { CONFIG } from "./config.js";
 import { taskDefinitions, folderDefinitions } from "./data.js";
 
-export const MAX_FILE_BYTES=50*1024;
+export const MAX_FILE_BYTES=2*1024*1024;
 const n=v=>Number(v||0);
 
 export async function getSession(){const {data,error}=await supabase.auth.getSession();if(error)throw error;return data.session;}
@@ -43,7 +43,8 @@ export async function createOrder(input){
     folder_path:folderPath,comments:input.comments||null,created_by:user.id};
   const {data:order,error}=await supabase.from("preppap_orders").insert(payload).select().single();if(error)throw error;
   try{
-    const taskRows=taskDefinitions.map(t=>({order_id:order.id,task_code:t[0],task_name:t[1],from_party:t[2],to_party:t[3],status:"Not Started",due_date:input.requiredDate||null}));
+    const autoShipment=input.shippingMethod==="Monterrey → Customer";
+    const taskRows=taskDefinitions.map(t=>({order_id:order.id,task_code:t[0],task_name:t[1],from_party:t[2],to_party:t[3],status:t[0]==="Shipment"&&autoShipment?"Completed":"Not Started",completed_at:t[0]==="Shipment"&&autoShipment?new Date().toISOString():null,due_date:input.requiredDate||null}));
     const {error:taskError}=await supabase.from("preppap_tasks").insert(taskRows);if(taskError)throw taskError;
     await initializeFolders(folderPath);
   }catch(e){await supabase.from("preppap_orders").delete().eq("id",order.id);throw e;}
@@ -53,7 +54,7 @@ function sanitize(v){return String(v||"").normalize("NFKD").replace(/[\/:*?"<>|#
 function storageOrderFolder(orderNumber,customer,partNumber){return [orderNumber,customer,partNumber].map(sanitize).filter(Boolean).join("-");}
 async function initializeFolders(folderPath){for(const [,folder] of folderDefinitions){const path=`${folderPath}/${folder}/.keep`;const {error}=await supabase.storage.from(CONFIG.STORAGE_BUCKET).upload(path,new Blob(["GUVEL PREPPAP FOLDER"],{type:"text/plain"}),{upsert:true,contentType:"text/plain"});if(error)throw new Error(`Storage folder ${folder}: ${error.message}`);}}
 
-function validateFile(file){if(!file)throw new Error("Selecciona un archivo.");if(file.size>MAX_FILE_BYTES)throw new Error(`El archivo supera el máximo de 50 KB. Tamaño actual: ${(file.size/1024).toFixed(1)} KB.`);if(file.size===0)throw new Error("El archivo está vacío.");}
+function validateFile(file){if(!file)throw new Error("Selecciona un archivo.");if(file.size>MAX_FILE_BYTES)throw new Error(`El archivo supera el máximo de 2 MB. Tamaño actual: ${(file.size/1024/1024).toFixed(2)} MB.`);if(file.size===0)throw new Error("El archivo está vacío.");}
 function safeFileName(name){return String(name||"file").normalize("NFKD").replace(/[\/:*?"<>|#%{}~&\[\]();,'`]/g,"-").replace(/\s+/g,"_").replace(/-+/g,"-").slice(0,150);}
 export async function uploadTaskDocument(dbOrderId,taskCode,file,orderFolder){
   validateFile(file);const path=`${orderFolder}/${taskCode}/${Date.now()}_${safeFileName(file.name)}`;
@@ -62,6 +63,12 @@ export async function uploadTaskDocument(dbOrderId,taskCode,file,orderFolder){
   const {data,error:de}=await supabase.from("preppap_documents").insert({order_id:dbOrderId,task_code:taskCode,document_name:file.name,storage_path:path,content_type:file.type,size_bytes:file.size,uploaded_by:userData.user?.id||null}).select().single();
   if(de){await supabase.storage.from(CONFIG.STORAGE_BUCKET).remove([path]);throw de;}return data;
 }
+export async function deleteTaskDocument(documentId,storagePath){
+  const {error:se}=await supabase.storage.from(CONFIG.STORAGE_BUCKET).remove([storagePath]);
+  if(se)throw se;
+  const {error:de}=await supabase.from("preppap_documents").delete().eq("id",documentId);
+  if(de)throw de;
+}
 export async function cancelOrder(orderId){
   const {data,error}=await supabase.from("preppap_orders").update({status:"Cancelled"}).eq("id",orderId).select().single();
   if(error)throw error;
@@ -69,18 +76,26 @@ export async function cancelOrder(orderId){
 }
 export async function updateTask(taskId,payload){const {data,error}=await supabase.from("preppap_tasks").update(payload).eq("id",taskId).select().single();if(error)throw error;return data;}
 export async function completeTask(taskId,orderId,taskCode,details,gateData={}){
-  const {count,error}=await supabase.from("preppap_documents").select("id",{count:"exact",head:true}).eq("order_id",orderId).eq("task_code",taskCode);
-  if(error)throw error;if(!count)throw new Error("No puedes completar esta etapa sin subir al menos un archivo de evidencia.");
+  const {data:order,error:oe}=await supabase.from("preppap_orders").select("shipping_method,mes_po,mes_po_qty,mws_invoice_qty").eq("id",orderId).single();
+  if(oe)throw oe;
+  const evidenceOptional=taskCode==="Shipment" && order.shipping_method==="Monterrey → Customer";
+  const evidenceFolder=folderDefinitions.find(x=>x[0]===taskCode)?.[1]||taskCode;
+  const {count,error}=await supabase.from("preppap_documents").select("id",{count:"exact",head:true}).eq("order_id",orderId).eq("task_code",evidenceFolder);
+  if(error)throw error;
+  if(!count && !evidenceOptional)throw new Error("No puedes completar esta etapa sin subir al menos un archivo de evidencia.");
+  if(taskCode==="MESPO"){
+    const poNumber=gateData.mesPO||null, poQty=Number(gateData.mesPOQty||0);
+    const {error:ue}=await supabase.from("preppap_orders").update({mes_po:poNumber,mes_po_qty:poQty}).eq("id",orderId); if(ue)throw ue;
+  }
   if(taskCode==="MWSInvoice"){
     const poQty=Number(gateData.mesPOQty||0), invoiceQty=Number(gateData.mwsInvoiceQty||0);
-    const {error:oe}=await supabase.from("preppap_orders").update({mes_po_qty:poQty,mws_invoice_qty:invoiceQty}).eq("id",orderId);
-    if(oe)throw oe;
+    const {error:ue}=await supabase.from("preppap_orders").update({mes_po_qty:poQty,mws_invoice_qty:invoiceQty,mws_invoice:gateData.mwsInvoice||null}).eq("id",orderId); if(ue)throw ue;
     const remaining=Math.abs(poQty-invoiceQty);
     const poType=invoiceQty<poQty?"PO vs Invoice":"Invoice vs PO";
-    const {data:existing,error:be}=await supabase.from("preppap_compensations").select("id").eq("order_id",orderId).eq("po_type",poType).maybeSingle();
+    const {data:existing,error:be}=await supabase.from("preppap_compensations").select("id,status").eq("order_id",orderId).in("status",["Open","Partial"]).maybeSingle();
     if(be)throw be;
     if(remaining>0){
-      const payload={po_type:poType,po_number:gateData.mesPO||null,ordered_qty:poQty,delivered_qty:invoiceQty,status:"Open",comments:`Automatically generated from MWS Invoice → MES. PO MES: ${poQty} pcs; Invoice MWS: ${invoiceQty} pcs. Balance required: ${remaining} pcs.`};
+      const payload={po_type:poType,po_number:gateData.mesPO||order.mes_po||null,ordered_qty:poQty,delivered_qty:invoiceQty,status:"Open",comments:`Automatically generated from Invoice Metrics Works → Metrics México. PO Metrics México: ${poQty} pcs; Invoice Metrics Works: ${invoiceQty} pcs. Balance required: ${remaining} pcs.`};
       const result=existing?await supabase.from("preppap_compensations").update(payload).eq("id",existing.id):await supabase.from("preppap_compensations").insert({...payload,order_id:orderId});
       if(result.error)throw result.error;
     }

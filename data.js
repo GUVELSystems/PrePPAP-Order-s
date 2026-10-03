@@ -1,35 +1,29 @@
 export const taskDefinitions=[
-  ['Quote','Cotización MES → Cliente','MES','Cliente'],
-  ['CustomerPO','PO Cliente → MES','Cliente','MES'],
+  ['Quote','Cotización Metrics Mexico → Customer','Metrics Mexico','Customer'],
+  ['CustomerPO','PO Customer → Metrics Mexico','Customer','Metrics Mexico'],
   ['PrePPAPRequest','PrePPAP Order Request','MWS','MES'],
-  ['MESPO','PO MES → MWS','MES','MWS'],
-  ['MWSInvoice','Factura MWS → MES','MWS','MES'],
-  ['Shipping','Método de Envío','Logística','Cliente'],
-  ['Monterrey','Monterrey → Cliente: Proceso de MES','MES','Cliente'],
-  ['FedEx','Guía FedEx / Referencias','MWS','Cliente'],
-  ['MESInvoice','Factura MES → Cliente','MES','Cliente']
+  ['MESPO','PO Metrics México → Metrics Works','Metrics México','Metrics Works'],
+  ['MWSInvoice','Invoice Metrics Works → Metrics México','Metrics Works','Metrics México'],
+  ['Shipment','Metrics Mexico Shipment Process / Metrics Works Shipment Process','Metrics Mexico','Customer'],
+  ['MESInvoice','Invoice Metrics México → Customer','Metrics México','Customer']
 ];
 
 export const folderDefinitions=[
-  ['Quote','01_Cotizacion_MES_Cliente','Cotización MES a Cliente'],
-  ['CustomerPO','02_PO_Cliente_MES','PO Cliente a MES'],
-  ['PrePPAPRequest','03_PrePPAP_Order_Request_MWS_MES','PrePPAP Order Request MWS a MES'],
-  ['MESPO','04_PO_MES_MWS','PO MES a MWS'],
-  ['MWSInvoice','05_Factura_MWS_MES','Factura MWS a MES'],
-  ['Shipping','06_Metodo_de_Envio','Método de Envío'],
-  ['Monterrey','07_Monterrey_Cliente','Monterrey a Cliente: Proceso de MES'],
-  ['FedEx','08_MWS_Cliente','MWS a Cliente: Guía de FedEx con Referencias'],
-  ['MESInvoice','09_Factura_MES_Cliente','Factura MES a Cliente']
+  ['Quote','01_Cotizacion_Metrics_Mexico_Customer','Cotización Metrics Mexico → Customer'],
+  ['CustomerPO','02_PO_Customer_Metrics_Mexico','PO Customer → Metrics Mexico'],
+  ['PrePPAPRequest','03_PrePPAP_Order_Request','PrePPAP Order Request'],
+  ['MESPO','04_PO_Metrics_Mexico_Metrics_Works','PO Metrics México → Metrics Works'],
+  ['MWSInvoice','05_Invoice_Metrics_Works_Metrics_Mexico','Invoice Metrics Works → Metrics México'],
+  ['Shipment','06_Shipment_Process','Shipment Process'],
+  ['MESInvoice','07_Invoice_Metrics_Mexico_Customer','Invoice Metrics México → Customer']
 ];
 
 export const taskHints={
-  Quote:{label:'Cotización MES → Cliente',reference:'Número de cotización / referencia comercial',info:'Captura cualquier dato relevante de la cotización.'},
-  CustomerPO:{label:'PO Cliente → MES',reference:'Número de PO del cliente',info:'Número de PO, cantidad autorizada y cualquier condición relevante.'},
+  Quote:{label:'Cotización Metrics Mexico → Customer',reference:'Número de cotización / referencia comercial',info:'Captura cualquier dato relevante de la cotización.'},
+  CustomerPO:{label:'PO Customer → Metrics Mexico',reference:'Número de PO del Customer',info:'Número de PO, cantidad autorizada y cualquier condición relevante.'},
   PrePPAPRequest:{label:'PrePPAP Order Request',reference:'Número de solicitud MWS → MES',info:'Referencia de la solicitud y alcance del pedido.'},
-  MESPO:{label:'PO MES → MWS',reference:'Número de PO MES → MWS',info:'PO, cantidad solicitada y condiciones de entrega.'},
-  MWSInvoice:{label:'Factura MWS → MES',reference:'Número de factura MWS',info:'Factura, cantidad facturada y observaciones.'},
-  Shipping:{label:'Método de Envío',reference:'Guía / referencia logística',info:'Método, transportista y cualquier dato de embarque.'},
-  Monterrey:{label:'Monterrey → Cliente: Proceso de MES',reference:'Referencia del proceso / envío',info:'Información del proceso realizado en Monterrey.'},
-  FedEx:{label:'Guía FedEx / Referencias',reference:'Número de guía FedEx',info:'Debe contener la referencia de número de parte + propósito.'},
-  MESInvoice:{label:'Factura MES → Cliente',reference:'Número de factura MES',info:'Factura, cantidad facturada y observaciones.'}
+  MESPO:{label:'PO Metrics México → Metrics Works',reference:'Número de PO Metrics México → Metrics Works',info:'Número de PO y cantidad de piezas solicitadas.'},
+  MWSInvoice:{label:'Invoice Metrics Works → Metrics México',reference:'Número de factura Metrics Works',info:'Factura, cantidad facturada y observaciones.'},
+  Shipment:{label:'Shipment Process',reference:'Referencia de envío / proceso',info:'El proceso depende del Shipping Method seleccionado al crear el PrePPAP.'},
+  MESInvoice:{label:'Invoice Metrics México → Customer',reference:'Número de factura Metrics México',info:'Factura, cantidad facturada y observaciones.'}
 };

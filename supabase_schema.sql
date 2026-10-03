@@ -74,7 +74,7 @@ create table if not exists public.preppap_documents (
   document_name text not null,
   storage_path text not null,
   content_type text,
-  size_bytes bigint check (size_bytes is null or size_bytes <= 51200),
+  size_bytes bigint check (size_bytes is null or size_bytes <= 2097152),
   uploaded_by uuid references auth.users(id) on delete set null,
   created_at timestamptz not null default now()
 );
@@ -95,7 +95,7 @@ alter table public.preppap_tasks add column if not exists reference text;
 alter table public.preppap_tasks add column if not exists details text;
 alter table public.preppap_documents drop constraint if exists preppap_documents_size_bytes_check;
 alter table public.preppap_documents add constraint preppap_documents_size_bytes_check
-  check (size_bytes is null or size_bytes <= 51200);
+  check (size_bytes is null or size_bytes <= 2097152);
 
 -- Updated-at helper
 create or replace function public.set_updated_at()
@@ -214,7 +214,7 @@ on public.preppap_documents for all to authenticated using (true) with check (tr
 insert into storage.buckets (id, name, public)
 values ('preppap-documents', 'preppap-documents', false)
 on conflict (id) do update
-set file_size_limit = 51200;
+set file_size_limit = 2097152;
 
 drop policy if exists "Authenticated users can read PrePPAP files" on storage.objects;
 create policy "Authenticated users can read PrePPAP files"
