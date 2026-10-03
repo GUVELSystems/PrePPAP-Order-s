@@ -13,6 +13,7 @@ export function friendly(e) {
   if (/invalid key|invalid characters/i.test(m)) return "El nombre del archivo o de la carpeta contiene caracteres que Storage no acepta.";
   if (/row-level security|violates row-level|not authorized|permission denied/i.test(m)) return "Tu usuario no tiene permiso para esta acción (revisa las políticas RLS).";
   if (/jwt|token.*expired|not authenticated/i.test(m)) return "Tu sesión expiró. Vuelve a iniciar sesión.";
+  if (/preppap_invoices|sync_preppap_balance|invoice_id/i.test(m) && /does not exist|schema cache|could not find|not found/i.test(m)) return "Falta actualizar la base de datos: ejecuta db/migration_v11.sql en el SQL Editor de Supabase.";
   if (/failed to fetch|networkerror|load failed/i.test(m)) return "No hay conexión con Supabase. Revisa tu red e inténtalo de nuevo.";
   if (/duplicate key.*order_number/i.test(m)) return "El número de PrePPAP ya existe. Ejecuta db/migration_v10.sql y vuelve a intentarlo.";
   return m || "Ocurrió un error inesperado.";
@@ -42,17 +43,23 @@ async function fetchAll(table, newestFirst = false) {
 const groupBy = (rows, key) => { const m = new Map(); for (const r of rows) { const k = r[key]; (m.get(k) || m.set(k, []).get(k)).push(r); } return m; };
 
 export async function listOrders() {
-  const [orders, tasks, balances, docs] = await Promise.all([
-    fetchAll("preppap_orders", true), fetchAll("preppap_tasks"), fetchAll("preppap_compensations"), fetchAll("preppap_documents")
+  const [orders, tasks, balances, docs, invoices] = await Promise.all([
+    fetchAll("preppap_orders", true), fetchAll("preppap_tasks"), fetchAll("preppap_compensations"),
+    fetchAll("preppap_documents"), fetchAll("preppap_invoices")
   ]);
-  const T = groupBy(tasks, "order_id"), B = groupBy(balances, "order_id"), D = groupBy(docs, "order_id");
-  return orders.map(o => ({
-    ...o,
-    id: o.order_number, dbId: o.id,
-    qtyRequested: num(o.qty_requested), qtyShipped: num(o.qty_shipped), qtyInvoiced: num(o.qty_invoiced),
-    mesPOQty: num(o.mes_po_qty), mwsInvoiceQty: num(o.mws_invoice_qty),
-    tasks: T.get(o.id) || [], balances: B.get(o.id) || [], documents: D.get(o.id) || []
-  }));
+  const T = groupBy(tasks, "order_id"), B = groupBy(balances, "order_id"), D = groupBy(docs, "order_id"), V = groupBy(invoices, "order_id");
+  return orders.map(o => {
+    const inv = V.get(o.id) || [];
+    return {
+      ...o,
+      id: o.order_number, dbId: o.id,
+      qtyRequested: num(o.qty_requested), qtyShipped: num(o.qty_shipped), qtyInvoiced: num(o.qty_invoiced),
+      mesPOQty: num(o.mes_po_qty),
+      // Facturado por Metrics Works = suma de sus facturas.
+      mwsInvoiceQty: inv.length ? inv.reduce((s, i) => s + num(i.qty), 0) : num(o.mws_invoice_qty),
+      invoices: inv, tasks: T.get(o.id) || [], balances: B.get(o.id) || [], documents: D.get(o.id) || []
+    };
+  });
 }
 
 /* ---------- Nombres seguros para Storage ---------- */
@@ -104,7 +111,7 @@ export function validateFile(file) {
   if (file.size === 0) throw new Error("El archivo está vacío.");
   if (file.size > MAX_FILE_BYTES) throw new Error(`Supera el máximo de 2 MB (pesa ${(file.size / 1048576).toFixed(2)} MB).`);
 }
-export async function uploadDocument(order, gate, file) {
+export async function uploadDocument(order, gate, file, invoiceId = null) {
   validateFile(file);
   const path = `${order.folder_path}/${gate.folder}/${Date.now()}_${rand()}_${safeFileName(file.name)}`;
   const { error } = await supabase.storage.from(CONFIG.STORAGE_BUCKET).upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
@@ -116,7 +123,7 @@ export async function uploadDocument(order, gate, file) {
   }
   const { data: u } = await supabase.auth.getUser();
   const { data, error: de } = await supabase.from("preppap_documents").insert({
-    order_id: order.dbId, task_code: gate.folder, document_name: file.name, storage_path: path,
+    order_id: order.dbId, task_code: gate.folder, invoice_id: invoiceId, document_name: file.name, storage_path: path,
     content_type: file.type || null, size_bytes: file.size, uploaded_by: u?.user?.id || null
   }).select().single();
   if (de) { await supabase.storage.from(CONFIG.STORAGE_BUCKET).remove([path]); throw de; }
@@ -140,7 +147,7 @@ async function updateTask(id, payload) {
   if (error) throw error; return data;
 }
 
-// Escribe en la orden los datos capturados en la etapa y sincroniza el balance.
+// Escribe en la orden los datos capturados en la etapa y recalcula el balance.
 async function applyGateData(order, gate, v) {
   const patch = {};
   if (gate.refCol) patch[gate.refCol] = (v.reference || "").trim() || null;
@@ -149,30 +156,22 @@ async function applyGateData(order, gate, v) {
   if (Object.keys(patch).length) {
     const { error } = await supabase.from("preppap_orders").update(patch).eq("id", order.dbId); if (error) throw error;
   }
-  if (gate.reconcile) await syncCompensation(order, num(v.mesPOQty), num(v.qty));
+  if (gate.reconcile || gate.code === "MESPO") await syncBalance(order.dbId);
 }
 
-// Crea/actualiza el registro de balance solo si PO y factura difieren; lo cierra si ya coinciden.
-async function syncCompensation(order, poQty, invQty) {
-  const { data: rows, error } = await supabase.from("preppap_compensations").select("id,status")
-    .eq("order_id", order.dbId).in("status", ["Open", "Partial"]).order("created_at", { ascending: false }).limit(1);
+// La base de datos decide si abrir, actualizar o cerrar el balance (PO vs suma de facturas).
+export async function syncBalance(orderDbId) {
+  const { error } = await supabase.rpc("sync_preppap_balance", { p_order_id: orderDbId });
   if (error) throw error;
-  const existing = rows?.[0], diff = Math.abs(poQty - invQty);
-  const base = { po_type: invQty < poQty ? "PO vs Invoice" : "Invoice vs PO", po_number: order.mes_po || null, ordered_qty: poQty, delivered_qty: invQty };
-  let res;
-  if (diff > 0) {
-    res = existing
-      ? await supabase.from("preppap_compensations").update(base).eq("id", existing.id)
-      : await supabase.from("preppap_compensations").insert({ ...base, order_id: order.dbId, status: "Open",
-          comments: `Generado al completar la factura de Metrics Works. PO: ${poQty} pzas, factura: ${invQty} pzas, diferencia: ${diff} pzas.` });
-  } else if (existing) {
-    res = await supabase.from("preppap_compensations").update({ ...base, status: "Closed" }).eq("id", existing.id);
-  }
-  if (res?.error) throw res.error;
 }
 
 export async function completeGate(order, gate, v) {
   const task = taskOf(order, gate.code); if (!task) throw new Error("La etapa no existe para esta orden.");
+  if (gate.reconcile) {
+    const { count, error } = await supabase.from("preppap_invoices").select("id", { count: "exact", head: true }).eq("order_id", order.dbId);
+    if (error) throw error;
+    if (!count) throw new Error("Registra al menos una factura de Metrics Works antes de completar la etapa.");
+  }
   const optional = gate.code === "Shipment" && order.shipping_method === SHIPPING.MTY;
   if (!optional) {
     const { count, error } = await supabase.from("preppap_documents").select("id", { count: "exact", head: true })
@@ -191,6 +190,39 @@ export async function saveGate(order, gate, v) {
 }
 export async function reopenGate(order, gate) {
   await updateTask(taskOf(order, gate.code).id, { status: "In Progress", completed_at: null });
+}
+
+/* ---------- Facturas de Metrics Works (parciales o totales) ---------- */
+export async function addInvoice(order, v, files) {
+  const gate = gateByCode("MWSInvoice");
+  if (!(v.qty > 0)) throw new Error("Las piezas de la factura deben ser mayores a 0.");
+  if (!files?.length) throw new Error("Adjunta el archivo de la factura.");
+  files.forEach(validateFile);
+  const { data: u } = await supabase.auth.getUser();
+  const { data: inv, error } = await supabase.from("preppap_invoices").insert({
+    order_id: order.dbId, invoice_number: v.number.trim(), qty: num(v.qty), invoice_date: v.date || null, created_by: u?.user?.id || null
+  }).select().single();
+  if (error) throw error;
+  const docs = [];
+  try { for (const f of files) docs.push(await uploadDocument(order, gate, f, inv.id)); }
+  catch (e) {
+    for (const d of docs) await deleteDocument(d).catch(() => {});
+    await supabase.from("preppap_invoices").delete().eq("id", inv.id);
+    throw e;
+  }
+  return { invoice: inv, docs };
+}
+export async function addInvoiceFiles(order, invoice, files) {
+  files.forEach(validateFile);
+  const gate = gateByCode("MWSInvoice"), docs = [];
+  for (const f of files) docs.push(await uploadDocument(order, gate, f, invoice.id));
+  return docs;
+}
+export async function deleteInvoice(order, invoice) {
+  const paths = order.documents.filter(d => d.invoice_id === invoice.id).map(d => d.storage_path);
+  const { error } = await supabase.from("preppap_invoices").delete().eq("id", invoice.id); // borra también las filas de archivos
+  if (error) throw error;
+  if (paths.length) { const { error: se } = await supabase.storage.from(CONFIG.STORAGE_BUCKET).remove(paths); if (se) console.warn("Archivos huérfanos en Storage", paths, se); }
 }
 
 /* ---------- Balances ---------- */

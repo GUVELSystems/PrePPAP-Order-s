@@ -208,6 +208,8 @@ tr:last-child td { border-bottom: 0; }
 tbody tr.click { cursor: pointer; }
 tbody tr.click:hover td { background: #f7fafc; }
 td small { display: block; color: var(--muted); }
+td a { color: inherit; text-decoration: none; }
+td a:hover b { text-decoration: underline; text-underline-offset: 3px; }
 td.r, th.r { text-align: right; }
 td.red { color: var(--red); font-weight: 700; }
 .toolbar { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; padding: 14px 16px; border-bottom: 1px solid var(--line-2); }
@@ -258,6 +260,36 @@ dialog.dlg::backdrop { background: rgba(14, 26, 43, .55); }
 .pick:hover { background: var(--cyan-wash); }
 .pick b { font-family: var(--font-display); }
 .pick span { color: var(--muted); font-size: 13px; }
+
+
+/* ---------- Facturas y avance del PO ---------- */
+.inv-sum { padding: 14px 16px; border-radius: var(--r-md); background: var(--paper); border: 1px solid var(--line); margin-bottom: 14px; }
+.inv-sum.warn { background: var(--amber-wash); border-color: #efd599; }
+.inv-sum.good { background: var(--green-wash); border-color: #b5e0cb; }
+.inv-nums { display: flex; flex-wrap: wrap; gap: 4px 18px; align-items: baseline; font-size: 14px; }
+.inv-nums b { font: 700 20px var(--font-display); font-variant-numeric: tabular-nums; }
+.inv-nums .falta { margin-left: auto; font-weight: 600; }
+.inv-sum.warn .falta { color: var(--amber); }
+.inv-sum.good .falta { color: var(--green); }
+.bar { height: 8px; margin-top: 10px; background: rgba(14, 26, 43, .12); clip-path: var(--seg); overflow: hidden; }
+.bar i { display: block; height: 100%; background: var(--cyan); transition: width .25s; }
+.inv-sum.good .bar i { background: var(--green); }
+.inv-note { margin-top: 10px; font-size: 13px; color: var(--amber); }
+.inv-list { display: grid; gap: 10px; }
+.inv { border: 1px solid var(--line); border-radius: var(--r-sm); background: #fff; padding: 10px 12px; }
+.inv-head { display: flex; align-items: center; gap: 10px; }
+.inv-head > div:first-child { flex: 1; min-width: 0; }
+.inv-head small { display: block; color: var(--muted); font-size: 12.5px; }
+.inv-qty { font: 700 15px var(--font-display); font-variant-numeric: tabular-nums; white-space: nowrap; }
+.inv-head .del { width: 30px; height: 30px; display: grid; place-items: center; border: 0; border-radius: var(--r-sm); background: none; color: var(--muted); }
+.inv-head .del:hover { background: var(--red-wash); color: var(--red); }
+.inv .files { margin-top: 8px; }
+.inv-add { margin-top: 14px; padding: 14px; border: 1.5px dashed #aebccb; border-radius: var(--r-md); background: #f8fafc; display: grid; gap: 12px; }
+.inv-grid { display: grid; grid-template-columns: 1.4fr 1fr 1fr; gap: 12px; }
+.inv-file { display: flex; align-items: center; gap: 10px; min-width: 0; }
+.inv-file span { overflow: hidden; text-overflow: ellipsis; white-space: nowrap; font-size: 13px; }
+.inv-add > .btn.primary { justify-self: start; }
+@media (max-width: 640px) { .inv-grid { grid-template-columns: 1fr; } }
 
 /* ---------- Toasts ---------- */
 #toasts { position: fixed; right: 18px; bottom: 18px; z-index: 100; display: grid; gap: 8px; max-width: min(420px, calc(100vw - 36px)); }

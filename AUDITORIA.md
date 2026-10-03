@@ -62,3 +62,12 @@ Cada hallazgo marcado **[reproducido]** se confirmó ejecutándolo; el resto se 
 3. Recarga con Ctrl+Shift+R para limpiar el caché de los módulos.
 
 **Sin el paso 1, el error de "completar etapa" seguirá apareciendo**: está en la base de datos, no en el frontend.
+
+## V11: facturas parciales y balance automático
+
+Surgió de aclarar el proceso: una orden tiene un solo número de parte, de ella nace un PO a Metrics Works, y Metrics Works puede facturar en partes pero debe cumplir el total.
+
+- **Antes**: una sola factura que se sobrescribía y un balance con cantidades capturadas a mano, que podían quedar desfasadas del PO real.
+- **Ahora**: las facturas son registros (`preppap_invoices`) con sus archivos. Un trigger mantiene el total facturado en la orden y `sync_preppap_balance()` abre, actualiza o cierra el balance. La lógica vive en la base de datos, así que no depende de qué pantalla se use.
+- **Verificado en PostgreSQL 16**: factura parcial sin etapa completada (sin balance) → completar etapa (abre balance 5/10) → reposición parcial (Parcial 7/10) → reposición final (Cerrado 10/10) → borrar una factura (abre balance nuevo) → un cierre manual sin reponer no se reabre solo → borrar la factura borra sus archivos → piezas 0 rechazadas. También la actualización desde V9 con datos antiguos: la factura que ya existía se convierte en un registro.
+- Defecto encontrado y corregido durante las pruebas: el comentario automático del balance contaba como justificación al cerrarlo sin reponer.

@@ -43,8 +43,8 @@ export const GATES = [
     name: "Invoice Metrics Works → Metrics México",
     title: "Factura de Metrics Works", short: "Factura MWS",
     from: "Metrics Works", to: "Metrics México",
-    refLabel: "Número de factura de Metrics Works", refCol: "mws_invoice",
-    qtyLabel: "Cantidad facturada (pzas)", qtyCol: "mws_invoice_qty", qtyRequired: true,
+    refLabel: "", refCol: null,
+    // Las facturas (parciales o totales) son registros propios: ver preppap_invoices.
     reconcile: true
   },
   {
