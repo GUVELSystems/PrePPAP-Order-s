@@ -11,7 +11,6 @@ export function friendly(e) {
   if (/PREPPAP_EVIDENCE_REQUIRED/i.test(m)) return "La etapa necesita al menos un archivo de evidencia antes de completarse.";
   if (/ambiguous/i.test(m) && /shipping_method/i.test(m)) return "La base de datos tiene el trigger antiguo de V9. Ejecuta db/migration_v10.sql en Supabase.";
   if (/invalid key|invalid characters/i.test(m)) return "El nombre del archivo o de la carpeta contiene caracteres que Storage no acepta.";
-  if (/exceeded the maximum|payload too large|too large/i.test(m)) return "El archivo supera el límite de 2 MB.";
   if (/row-level security|violates row-level|not authorized|permission denied/i.test(m)) return "Tu usuario no tiene permiso para esta acción (revisa las políticas RLS).";
   if (/jwt|token.*expired|not authenticated/i.test(m)) return "Tu sesión expiró. Vuelve a iniciar sesión.";
   if (/failed to fetch|networkerror|load failed/i.test(m)) return "No hay conexión con Supabase. Revisa tu red e inténtalo de nuevo.";
@@ -109,7 +108,12 @@ export async function uploadDocument(order, gate, file) {
   validateFile(file);
   const path = `${order.folder_path}/${gate.folder}/${Date.now()}_${rand()}_${safeFileName(file.name)}`;
   const { error } = await supabase.storage.from(CONFIG.STORAGE_BUCKET).upload(path, file, { upsert: false, contentType: file.type || "application/octet-stream" });
-  if (error) throw error;
+  if (error) {
+    // El archivo ya pasó nuestra validación de 2 MB: si Storage lo rechaza por tamaño, el límite está en el bucket.
+    if (/exceeded|too large|maximum allowed/i.test(error.message || ""))
+      throw new Error(`Supabase rechazó el archivo (${(file.size / 1024).toFixed(0)} KB) por el límite de tamaño del bucket, que es menor a 2 MB. Ejecuta db/migration_v10.sql en el SQL Editor de Supabase.`);
+    throw error;
+  }
   const { data: u } = await supabase.auth.getUser();
   const { data, error: de } = await supabase.from("preppap_documents").insert({
     order_id: order.dbId, task_code: gate.folder, document_name: file.name, storage_path: path,
