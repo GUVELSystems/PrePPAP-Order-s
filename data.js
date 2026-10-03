@@ -1,29 +1,79 @@
-export const taskDefinitions=[
-  ['Quote','Cotización Metrics Mexico → Customer','Metrics Mexico','Customer'],
-  ['CustomerPO','PO Customer → Metrics Mexico','Customer','Metrics Mexico'],
-  ['PrePPAPRequest','PrePPAP Order Request','MWS','MES'],
-  ['MESPO','PO Metrics México → Metrics Works','Metrics México','Metrics Works'],
-  ['MWSInvoice','Invoice Metrics Works → Metrics México','Metrics Works','Metrics México'],
-  ['Shipment','Metrics Mexico Shipment Process / Metrics Works Shipment Process','Metrics Mexico','Customer'],
-  ['MESInvoice','Invoice Metrics México → Customer','Metrics México','Customer']
-];
+// Definición central del flujo de 7 etapas.
+// IMPORTANTE: `code`, `folder`, `name`, `from` y `to` se guardan en la base de datos
+// y en Storage; no los cambies si ya tienes órdenes creadas.
 
-export const folderDefinitions=[
-  ['Quote','01_Cotizacion_Metrics_Mexico_Customer','Cotización Metrics Mexico → Customer'],
-  ['CustomerPO','02_PO_Customer_Metrics_Mexico','PO Customer → Metrics Mexico'],
-  ['PrePPAPRequest','03_PrePPAP_Order_Request','PrePPAP Order Request'],
-  ['MESPO','04_PO_Metrics_Mexico_Metrics_Works','PO Metrics México → Metrics Works'],
-  ['MWSInvoice','05_Invoice_Metrics_Works_Metrics_Mexico','Invoice Metrics Works → Metrics México'],
-  ['Shipment','06_Shipment_Process','Shipment Process'],
-  ['MESInvoice','07_Invoice_Metrics_Mexico_Customer','Invoice Metrics México → Customer']
-];
-
-export const taskHints={
-  Quote:{label:'Cotización Metrics Mexico → Customer',reference:'Número de cotización / referencia comercial',info:'Captura cualquier dato relevante de la cotización.'},
-  CustomerPO:{label:'PO Customer → Metrics Mexico',reference:'Número de PO del Customer',info:'Número de PO, cantidad autorizada y cualquier condición relevante.'},
-  PrePPAPRequest:{label:'PrePPAP Order Request',reference:'Número de solicitud MWS → MES',info:'Referencia de la solicitud y alcance del pedido.'},
-  MESPO:{label:'PO Metrics México → Metrics Works',reference:'Número de PO Metrics México → Metrics Works',info:'Número de PO y cantidad de piezas solicitadas.'},
-  MWSInvoice:{label:'Invoice Metrics Works → Metrics México',reference:'Número de factura Metrics Works',info:'Factura, cantidad facturada y observaciones.'},
-  Shipment:{label:'Shipment Process',reference:'Referencia de envío / proceso',info:'El proceso depende del Shipping Method seleccionado al crear el PrePPAP.'},
-  MESInvoice:{label:'Invoice Metrics México → Customer',reference:'Número de factura Metrics México',info:'Factura, cantidad facturada y observaciones.'}
+export const SHIPPING = {
+  MTY: "Monterrey → Customer",
+  MWS: "MWS → Customer"
 };
+
+export const GATES = [
+  {
+    code: "Quote", folder: "01_Cotizacion_Metrics_Mexico_Customer",
+    name: "Cotización Metrics Mexico → Customer",
+    title: "Cotización al cliente", short: "Cotización",
+    from: "Metrics Mexico", to: "Customer",
+    refLabel: "Número de cotización", refCol: null
+  },
+  {
+    code: "CustomerPO", folder: "02_PO_Customer_Metrics_Mexico",
+    name: "PO Customer → Metrics Mexico",
+    title: "PO del cliente", short: "PO cliente",
+    from: "Customer", to: "Metrics Mexico",
+    refLabel: "Número de PO del cliente", refCol: "customer_po",
+    qtyLabel: "Cantidad autorizada (pzas)", qtyCol: "customer_po_qty", qtyRequired: false
+  },
+  {
+    code: "PrePPAPRequest", folder: "03_PrePPAP_Order_Request",
+    name: "PrePPAP Order Request",
+    title: "Solicitud de orden PrePPAP", short: "Solicitud",
+    from: "MWS", to: "MES",
+    refLabel: "Número de solicitud MWS → MES", refCol: "preppap_request"
+  },
+  {
+    code: "MESPO", folder: "04_PO_Metrics_Mexico_Metrics_Works",
+    name: "PO Metrics México → Metrics Works",
+    title: "PO a Metrics Works", short: "PO a MWS",
+    from: "Metrics México", to: "Metrics Works",
+    refLabel: "Número de PO a Metrics Works", refCol: "mes_po",
+    qtyLabel: "Cantidad solicitada (pzas)", qtyCol: "mes_po_qty", qtyRequired: true
+  },
+  {
+    code: "MWSInvoice", folder: "05_Invoice_Metrics_Works_Metrics_Mexico",
+    name: "Invoice Metrics Works → Metrics México",
+    title: "Factura de Metrics Works", short: "Factura MWS",
+    from: "Metrics Works", to: "Metrics México",
+    refLabel: "Número de factura de Metrics Works", refCol: "mws_invoice",
+    qtyLabel: "Cantidad facturada (pzas)", qtyCol: "mws_invoice_qty", qtyRequired: true,
+    reconcile: true
+  },
+  {
+    code: "Shipment", folder: "06_Shipment_Process",
+    name: "Metrics Mexico Shipment Process / Metrics Works Shipment Process",
+    title: "Envío al cliente", short: "Envío",
+    from: "Metrics Mexico", to: "Customer",
+    refLabel: "Guía o referencia de envío", refCol: null,
+    qtyLabel: "Cantidad enviada (pzas)", qtyCol: "qty_shipped", qtyRequired: false
+  },
+  {
+    code: "MESInvoice", folder: "07_Invoice_Metrics_Mexico_Customer",
+    name: "Invoice Metrics México → Customer",
+    title: "Factura al cliente", short: "Factura cliente",
+    from: "Metrics México", to: "Customer",
+    refLabel: "Número de factura al cliente", refCol: null,
+    qtyLabel: "Cantidad facturada (pzas)", qtyCol: "qty_invoiced", qtyRequired: false
+  }
+];
+
+export const gateByCode = code => GATES.find(g => g.code === code);
+
+// El título del envío depende del método elegido al crear la orden.
+export const gateTitle = (gate, order) =>
+  gate.code === "Shipment"
+    ? (order?.shipping_method === SHIPPING.MTY ? "Envío desde Metrics México" : "Envío desde Metrics Works")
+    : gate.title;
+
+export const PURPOSES = ["Prototype", "Validation", "Pre-Production", "PPAP", "Sample", "Other"];
+export const PRIORITIES = ["Normal", "Low", "High", "Critical"];
+export const OWNERS = ["Quality", "Engineering", "Purchasing", "Logistics", "Finance", "MES", "MWS"];
+export const COMP_ACTIONS = ["Ship with next PrePPAP order", "Ship separately", "Credit", "Cancel", "Transfer to another PO"];

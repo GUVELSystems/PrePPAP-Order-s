@@ -1,117 +1,599 @@
-import {CONFIG} from "./config.js";
-import {taskDefinitions,folderDefinitions,taskHints} from "./data.js";
-import {getSession,signIn,signOut,listOrders,createOrder,updateCompensation,cancelOrder,getDocumentUrl,uploadTaskDocument,deleteTaskDocument,completeTask,reopenTask,MAX_FILE_BYTES} from "./supabase_api.js";
+import { CONFIG } from "./config.js";
+import { GATES, gateByCode, gateTitle, SHIPPING, PURPOSES, PRIORITIES, OWNERS, COMP_ACTIONS } from "./data.js";
+import {
+  getSession, signIn, signOut, onAuthChange, listOrders, createOrder, setOrderStatus,
+  uploadDocument, deleteDocument, getDocumentUrl, completeGate, saveGate, reopenGate,
+  saveCompensation, friendly, isAuthError
+} from "./api.js";
+import { $, $$, esc, icon, toast, openDialog, askConfirm, openInNewTab, fmtSize, fmtDate, fmtDateTime, fmtNum, todayISO } from "./utils.js";
 
-const app=document.querySelector("#app");let orders=[],selectedId=null,view="dashboard",session=null;
-const esc=v=>String(v??"").replace(/[&<>"']/g,s=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;","'":"&#039;"}[s]));
-const bal=o=>({ship:Math.max(0,(+o.qtyRequested||0)-(+o.qtyShipped||0)),invoice:Math.max(0,(+o.qtyRequested||0)-(+o.qtyInvoiced||0))});
-const activeTaskCodes=new Set(taskDefinitions.map(x=>x[0]));
-const taskProgress=o=>{const ts=(o.tasks||[]).filter(x=>activeTaskCodes.has(x.task_code));return ts.length?Math.round(ts.filter(x=>x.status==="Completed").length/ts.length*100):0};
-const hasBalanceRecord=o=>(o.balances||[]).length>0;
-const invoiceMismatch=o=>Math.abs((+o.mesPOQty||0)-(+o.mwsInvoiceQty||0));
-const pendingBalance=o=>invoiceMismatch(o)>0&&!hasBalanceRecord(o);
-const isCancelled=o=>o.status==="Cancelled";
-const stat=o=>isCancelled(o)?"Cancelled":taskProgress(o)===100?"Completed":taskProgress(o)>0?"In Progress":"Not Started";
-const activeOrders=()=>orders.filter(o=>!isCancelled(o));
-const pill=s=>`<span class="pill ${String(s).toLowerCase().replaceAll(" ","-")}">${esc(s)}</span>`;
-const nav=(id,t,i)=>`<button class="nav ${view===id?"active":""}" data-nav="${id}"><span>${i}</span>${t}</button>`;
-const fmtKB=b=>`${(Number(b||0)/1024).toFixed(1)} KB`;
+const app = $("#app");
 
-async function boot(){if(CONFIG.DEMO_MODE){showLogin("Demo mode is disabled. Connect the portal to Supabase.");return;}try{session=await getSession();}catch(e){showError(e.message);return;}if(!session){showLogin();return;}await refresh();}
-async function refresh(){try{orders=await listOrders();selectedId=selectedId&&orders.some(o=>o.id===selectedId)?selectedId:(orders[0]?.id||null);render();}catch(e){showError(e.message);}}
-function showError(msg){app.innerHTML=`<div class="fatal"><div class="fatal-card"><b>GUVEL / CONNECTION</b><h2>Supabase connection error</h2><p>${esc(msg)}</p><small>Check config.js, Supabase SQL/RLS and Authentication.</small></div></div>`;}
-function showLogin(message=""){app.innerHTML=`<div class="guvel-login"><div class="login-grid"><div class="login-copy"><div class="login-brand"><span class="gmark">G</span><div><strong>GUVEL</strong><small>SMARTER QUALITY SOLUTIONS</small></div></div><div class="orb"></div><span class="eyebrow">QUALITY CONTROL / PREPPAP</span><h1>PrePPAP<br><span>Command Center</span></h1><p>Control documental, trazabilidad y cierre de evidencia en un solo flujo.</p><div class="login-stats"><span><b>2 MB</b> Max. evidence</span><span><b>07</b> Workflow gates</span><span><b>100%</b> Traceability</span></div></div><div class="login-card"><small>SECURE WORKSPACE</small><h2>Sign in</h2><p>Access is managed through Supabase Authentication.</p><form id="loginForm"><label>Email<input name="email" type="email" autocomplete="username" placeholder="you@company.com" required></label><label>Password<input name="password" type="password" autocomplete="current-password" placeholder="••••••••" required></label><button class="primary login-submit">Enter workspace <span>→</span></button></form><div id="loginMsg" class="login-msg">${esc(message)}</div></div></div><div class="login-footer">GUVEL PREPPAP · EVIDENCE FIRST · SECURE WORKSPACE</div></div>`;
-document.querySelector("#loginForm").onsubmit=async e=>{e.preventDefault();const f=new FormData(e.target),msg=document.querySelector("#loginMsg"),btn=document.querySelector(".login-submit");btn.disabled=true;btn.innerHTML="Authenticating…";try{await signIn(f.get("email"),f.get("password"));session=await getSession();if(!session)throw new Error("Supabase did not return an active session.");await refresh();}catch(err){let m=err.message||"Unable to sign in.";if(/email not confirmed/i.test(m))m="Email not confirmed. Confirm the user in Supabase Authentication → Users.";if(/invalid login credentials/i.test(m))m="Invalid email or password.";msg.className="login-msg error-msg";msg.textContent=m;btn.disabled=false;btn.innerHTML="Enter workspace <span>→</span>";}};}
-function render(){app.innerHTML=`<div class="shell"><aside><div class="brand"><b>G</b><div><strong>GUVEL</strong><small>PREPPAP // CTRL</small></div></div><div class="side-label">WORKSPACE</div><nav>${nav("dashboard","Command Center","◈")}${nav("orders","PrePPAP Orders","▣")}${nav("tasks","Evidence Flow","✓")}${nav("balances","PO Balance","↔")}${nav("shipments","Shipments","⌁")}</nav><div class="side-status"><span class="live-dot"></span><div><b>SUPABASE ONLINE</b><small>Authenticated session</small></div></div><div class="sidefoot"><button id="auth">Sign out</button><small>GUVEL SYSTEMS · v2</small></div></aside><main><header><div><small>GUVEL SYSTEMS / PREPPAP CONTROL</small><h1>${({dashboard:"Command Center",orders:"PrePPAP Orders",tasks:"Evidence Flow",balances:"PO Balance",shipments:"Shipment Control"})[view]}</h1></div><div class="actions"><span class="connection"><i></i>LIVE</span><button class="primary" id="new">+ New PrePPAP</button></div></header><section class="content">${content()}</section></main></div>`;bind();}
-function content(){if(view==="dashboard")return dashboard();if(view==="orders")return ordersPage();if(view==="tasks")return tasksPage();if(view==="balances")return balancesPage();return shipmentsPage();}
-function dashboard(){const active=activeOrders(),completed=active.filter(o=>stat(o)==="Completed").length,open=active.reduce((s,o)=>s+bal(o).ship,0),evidence=active.reduce((s,o)=>s+(o.documents||[]).length,0),balancesPending=active.filter(pendingBalance).length,avg=active.length?Math.round(active.reduce((s,o)=>s+taskProgress(o),0)/active.length):0;return `<div class="hero"><div><span class="eyebrow">PREPPAP DIGITAL CONTROL</span><h2>Business control for every PrePPAP.</h2><p>Structured workflow, documentary evidence and quantity reconciliation in one place.</p></div><div class="hero-ring" style="--p:${avg*3.6}deg"><span>${avg}%<small>AVG FLOW</small></span></div></div><div class="metrics"><div class="metric"><small>ACTIVE ORDERS</small><strong>${active.length}</strong><em>Tracked PrePPAPs</em></div><div class="metric"><small>COMPLETED</small><strong>${completed}</strong><em>All active gates closed</em></div><div class="metric"><small>OPEN QUANTITY</small><strong>${open}</strong><em>Pieces pending shipment</em></div><div class="metric"><small>BALANCES PENDING</small><strong>${balancesPending}</strong><em>Mismatch without compensation</em></div><div class="metric"><small>EVIDENCE FILES</small><strong>${evidence}</strong><em>≤ 2 MB each</em></div></div><div class="twocol"><section class="panel glow"><div class="head"><div><h2>Active PrePPAP Signals</h2><p>Select an order to open its evidence workflow.</p></div><button class="link" data-nav="orders">View all →</button></div>${active.slice(0,6).map(row).join("")||`<div class="empty">No active PrePPAP orders yet. Create your first order.</div>`}</section><section class="panel"><div class="head"><div><h2>Control Matrix</h2><p>System-enforced operating logic</p></div></div>${[["01","Evidence required","Every execution gate requires documentary evidence unless the shipment is handled by Monterrey."],["02","2 MB hard limit","Applies to every uploaded file."],["03","Traceable gate","Each file remains linked to its workflow step."],["04","Balance control","A quantity mismatch becomes pending until a compensation record exists for the PrePPAP."]].map(x=>`<div class="rule"><b>${x[0]}</b><div><strong>${x[1]}</strong><span>${x[2]}</span></div></div>`).join("")}</section></div>`;}
-function row(o){const p=taskProgress(o),b=bal(o);return `<button class="orderrow" data-order="${esc(o.id)}"><div><b>${esc(o.id)}</b><span>${esc(o.customer)} · ${esc(o.partNumber)}</span></div><div class="row-progress"><span><i style="width:${p}%"></i></span><small>${p}% evidence</small></div><div>${pill(stat(o))}</div></button>`;}
-function ordersPage(){return `<div class="page-intro"><div><span class="eyebrow">CONTROL REGISTER</span><h2>PrePPAP Orders</h2><p>Manage active and archived PrePPAP orders with complete evidence traceability.</p></div><div class="page-actions"><button class="secondary" id="exportOrders">Export ZIP</button></div></div><div class="toolbar"><input id="search" placeholder="Search PrePPAP, customer, part number..."><select id="filter"><option>All Status</option><option>Completed</option><option>In Progress</option><option>Not Started</option><option>Cancelled</option></select></div><section class="panel table"><table><thead><tr><th>PrePPAP</th><th>Customer</th><th>Part</th><th>Purpose</th><th>Evidence</th><th>Open Qty</th><th>Status</th><th></th></tr></thead><tbody id="rows"></tbody></table></section>${selectedId?detail(orders.find(x=>x.id===selectedId)):``}`;}
-function fill(){const body=document.querySelector("#rows");if(!body)return;const s=document.querySelector("#search")?.value||"",f=document.querySelector("#filter")?.value||"All Status";body.innerHTML=orders.filter(o=>[o.id,o.customer,o.partNumber,o.purpose].join(" ").toLowerCase().includes(s.toLowerCase())&&(f==="All Status"||stat(o)===f)).map(o=>`<tr class="${selectedId===o.id?"selected-row":""}" data-order="${esc(o.id)}"><td><b>${esc(o.id)}</b></td><td>${esc(o.customer)}</td><td>${esc(o.partNumber)}</td><td>${esc(o.purpose)}</td><td><div class="table-progress"><i style="width:${taskProgress(o)}%"></i></div><small>${taskProgress(o)}%</small></td><td class="${bal(o).ship?"red":""}">${bal(o).ship}</td><td>${pill(stat(o))}</td><td><button class="mini" data-open-order="${esc(o.id)}">Open</button></td></tr>`).join("")||`<tr><td colspan="8" class="empty">No orders found.</td></tr>`;}
-function detail(o){if(!o)return "";const b=bal(o),p=taskProgress(o),pending=pendingBalance(o);return `<section class="panel detail glow"><div class="detailhead"><div><span class="eyebrow">${esc(o.id)}</span><h2>${esc(o.customer)} <span>·</span> ${esc(o.partNumber)}</h2><p>${esc(o.purpose)} · Required ${esc(o.requiredDate||"—")} · Shipping ${esc(o.shippingMethod||"—")}</p></div><div class="detail-controls"><div class="detail-score"><b>${p}%</b><small>FLOW</small></div><button class="close-detail" id="closeDetail" title="Close">×</button></div></div><div class="qtygrid"><div><small>REQUESTED</small><b>${o.qtyRequested} pcs</b></div><div><small>SHIPPED</small><b>${o.qtyShipped} pcs</b></div><div class="${b.ship?"warn":""}"><small>REMAINING SHIP</small><b>${b.ship} pcs</b></div><div class="${pending?"warn":""}"><small>BALANCE PENDING</small><b>${pending?invoiceMismatch(o):0} pcs</b></div></div>${isCancelled(o)?`<div class="cancelled-banner"><b>ORDER CANCELLED</b><span>This PrePPAP is archived from active dashboards and pending task control. Documents and history remain stored.</span></div>`:`<div class="workflow"><div class="workflow-head"><div><h3>PrePPAP Evidence Flow</h3><p>Open any gate to upload evidence and complete it.</p></div><span class="file-rule">MAX FILE · 2 MB</span></div>${taskDefinitions.map((t,i)=>{const task=o.tasks?.find(x=>x.task_code===t[0]);const docs=o.documents?.filter(d=>d.task_code===folderFor(t[0]))||[];const label=t[0]==="Shipment"?(o.shippingMethod==="Monterrey → Customer"?"Metrics Mexico Shipment Process":"Metrics Works Shipment Process"):t[1];const status=task?.status||"Not Started";return `<button class="gate ${status==="Completed"?"done":""}" data-task="${esc(t[0])}"><span class="gate-no">${String(i+1).padStart(2,"0")}</span><span class="gate-icon">${status==="Completed"?"✓":"+"}</span><span class="gate-copy"><b>${esc(label)}</b><small>${esc(t[2])} → ${esc(t[3])}</small></span><span class="gate-evidence">${docs.length} file${docs.length===1?"":"s"}</span><span class="gate-status">${pill(status)}</span><span>→</span></button>`}).join("")}</div>${pending?`<div class="alert"><b>⚠ ${invoiceMismatch(o)} pc pending.</b> Open PO Balance to define the compensation action.</div>`:""}</div>`}${!isCancelled(o)?`<div class="detail-footer"><button class="danger" id="cancelOrder">Cancel PrePPAP Order</button></div>`:""}</section>`;}
-function folderFor(code){return folderDefinitions.find(x=>x[0]===code)?.[1]||code;}
-function tasksPage(){const active=activeOrders();return `<section class="panel table"><div class="flow-page-head"><div><h2>Evidence Flow</h2><p>Select any gate to continue its evidence capture in the PrePPAP order.</p></div><span class="file-rule">MAX FILE · 2 MB</span></div><table><thead><tr><th>PrePPAP</th><th>Gate</th><th>Evidence</th><th>Due</th><th>Status</th><th>Action</th></tr></thead><tbody>${active.flatMap(o=>taskDefinitions.map(def=>{const t=(o.tasks||[]).find(x=>x.task_code===def[0]);if(!t)return [];const label=def[0]==="Shipment"?(o.shippingMethod==="Monterrey → Customer"?"Metrics Mexico Shipment Process":"Metrics Works Shipment Process"):def[1];return `<tr class="flow-row" data-flow-order="${esc(o.id)}" data-flow-task="${esc(def[0])}"><td><b>${esc(o.id)}</b><small>${esc(o.customer)} · ${esc(o.partNumber)}</small></td><td>${esc(label)}</td><td>${o.documents.filter(d=>d.task_code===folderFor(def[0])).length}</td><td>${esc(t.due_date||"—")}</td><td>${pill(t.status)}</td><td><button class="mini">Open →</button></td></tr>`;}).flat()).join("")||`<tr><td colspan="6" class="empty">No active evidence gates.</td></tr>`}</tbody></table></section>`;}
-function balancesPage(){return `<div class="balancebar"><div><h2>PO Balance & Compensation</h2><p>Every quantity mismatch must have an explicit disposition.</p></div><button class="primary" id="addBalance">+ Add Compensation</button></div><section class="panel table"><table><thead><tr><th>PrePPAP</th><th>PO</th><th>Ordered</th><th>Delivered</th><th>Remaining</th><th>Action</th><th>Related PO</th><th>Resolution</th><th>Status</th><th></th></tr></thead><tbody>${orders.flatMap(o=>(o.balances||[]).map((x,i)=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(x.po_number)}</td><td>${x.ordered_qty}</td><td>${x.delivered_qty}</td><td class="red"><b>${Math.max(0,x.ordered_qty-x.delivered_qty)}</b></td><td>${esc(x.action||"—")}</td><td>${esc(x.related_po||"—")}</td><td>${esc(x.resolution_date||"—")}</td><td>${pill(x.status||"Open")}</td><td><button class="mini" data-edit-balance="${esc(o.id)}" data-bi="${i}">Edit</button></td></tr>`)).join("")||`<tr><td colspan="10" class="empty">No compensation records.</td></tr>`}</tbody></table></section>`;}
-function shipmentsPage(){return `<section class="panel table"><table><thead><tr><th>PrePPAP</th><th>Method</th><th>Part</th><th>Purpose</th><th>Qty</th></tr></thead><tbody>${activeOrders().map(o=>`<tr><td><b>${esc(o.id)}</b></td><td>${esc(o.shippingMethod||"")}</td><td>${esc(o.partNumber)}</td><td>${esc(o.purpose)}</td><td>${o.qtyShipped}</td></tr>`).join("")||`<tr><td colspan="5" class="empty">No shipments.</td></tr>`}</tbody></table></section>`;}
+/* =========================================================
+   Estado y cálculos derivados
+   ========================================================= */
+const S = {
+  session: null, orders: [], route: { view: "dashboard" },
+  q: "", status: "all", flowStatus: "open", flowGate: "all", lastKey: ""
+};
+const VIEWS = { dashboard: "Resumen", orders: "Órdenes PrePPAP", flow: "Etapas", balances: "Balances de PO", shipments: "Envíos" };
+const STATUS_ES = { Completed: "Completada", "In Progress": "En curso", "Not Started": "Sin iniciar", Cancelled: "Cancelada", Open: "Abierto", Partial: "Parcial", Closed: "Cerrado" };
+const pill = s => `<span class="pill ${String(s).toLowerCase().replace(/\s+/g, "-")}">${esc(STATUS_ES[s] || s)}</span>`;
 
-function modal(html){document.body.insertAdjacentHTML("beforeend",`<div class="modalbg" id="modal"><div class="modal">${html}</div></div>`);document.querySelectorAll("#modal .close").forEach(x=>x.addEventListener("click",()=>document.querySelector("#modal").remove()));}
-function taskModal(order,taskCode){
- const task=order.tasks.find(x=>x.task_code===taskCode),hint=taskHints[taskCode]||{},folder=folderFor(taskCode),docs=order.documents.filter(x=>x.task_code===folder); if(!task){alert("This workflow item is not available for this PrePPAP.");return;}
- const shipmentAuto=taskCode==="Shipment"&&order.shippingMethod==="Monterrey → Customer";
- const shipmentLabel=taskCode==="Shipment"?(shipmentAuto?"Metrics Mexico Shipment Process":"Metrics Works Shipment Process"):hint.label;
- const renderDocList=()=>{const el=document.querySelector("#fileList");if(!el)return;el.innerHTML=docs.length?docs.map(d=>`<div class="doc"><button type="button" class="doc-open" data-doc="${esc(d.storage_path)}"><span>▣</span><div><b>${esc(d.document_name)}</b><small>${fmtKB(d.size_bytes)} · ${new Date(d.created_at).toLocaleString()}</small></div><em>↗</em></button><button type="button" class="doc-delete" data-delete-doc="${esc(d.id)}" data-delete-path="${esc(d.storage_path)}" title="Delete file">×</button></div>`).join(""):"<div class='empty'>No evidence uploaded yet.</div>";bindDocs();};
- const bindDocs=()=>{document.querySelectorAll("#fileList [data-doc]").forEach(x=>x.onclick=async()=>{try{window.open(await getDocumentUrl(x.dataset.doc),"_blank");}catch(e){alert(e.message);}});document.querySelectorAll("#fileList [data-delete-doc]").forEach(x=>x.onclick=async()=>{if(!confirm("Delete this evidence file?"))return;try{await deleteTaskDocument(x.dataset.deleteDoc,x.dataset.deletePath);const i=docs.findIndex(d=>d.id===x.dataset.deleteDoc);if(i>=0)docs.splice(i,1);renderDocList();const c=document.querySelector("#completeTask");if(c)c.disabled=!docs.length&&!shipmentAuto;}catch(e){alert(e.message);}});};
- modal(`<div class="modalhead neon"><div><span class="eyebrow">GATE ${String(taskDefinitions.findIndex(x=>x[0]===taskCode)+1).padStart(2,"0")}</span><h2>${esc(shipmentLabel||task.task_name)}</h2><p>${esc(task.from_party)} → ${esc(task.to_party)}</p></div><button class="close">×</button></div><div class="gate-modal"><div class="requirement"><span>01</span><div><b>${shipmentAuto?"Automatic completion":"Evidence required"}</b><small>${shipmentAuto?"Shipping Method = Monterrey → Customer. This activity is outside the execution scope of Metrics Works.":"No se puede marcar como completado sin al menos un archivo."}</small></div></div>${shipmentAuto?``:`<div class="upload-zone" id="dropZone"><input id="taskFile" type="file" hidden><div class="upload-symbol">↑</div><b>Upload evidence</b><small>Máximo 2 MB · aplica a todos los archivos</small><button type="button" class="secondary" id="chooseFile">Select file</button><div id="fileName"></div></div>`}<div class="file-list" id="fileList"></div><div class="task-info">${taskCode==="MESPO"?`<label>Número de PO Metrics México → Metrics Works<input id="mesPOReference" value="${esc(order.mesPO||task.reference||"")}" placeholder="PO number"></label><label>Cantidad de piezas<input id="mesPOQty" type="number" min="0" step="1" value="${order.mesPOQty||0}" required></label>`:""}${taskCode==="MWSInvoice"?`<div class="invoice-check"><div class="invoice-check-title"><b>Invoice reconciliation</b><small>Compara la cantidad del PO contra la cantidad facturada. El balance se crea únicamente si existe una diferencia.</small></div><div class="invoice-grid"><label>PO Metrics México → Metrics Works<input value="${esc(order.mesPO||"")}" readonly></label><label>Cantidad de PO MES<input id="mesPOQty" type="number" min="0" step="1" value="${order.mesPOQty||0}" required></label><label>Número de factura Metrics Works<input id="mwsInvoiceReference" value="${esc(order.mwsInvoice||task.reference||"")}" placeholder="Invoice number"></label><label>Cantidad Factura MWS<input id="mwsInvoiceQty" type="number" min="0" step="1" value="${order.mwsInvoiceQty||0}" required></label></div><div id="invoiceBalanceHint" class="balance-hint"></div></div>`:""}${taskCode!=="MESPO"&&taskCode!=="MWSInvoice"?`<label>${esc(hint.reference||"Reference")}<input id="taskReference" value="${esc(task.reference||"")}" placeholder="Reference / number"></label>`:`<label>Reference<input id="taskReference" value="${esc(task.reference||"")}" placeholder="Reference / number"></label>`}<label>Information / notes<textarea id="taskDetails" placeholder="Relevant information...">${esc(task.details||"")}</textarea></div></div><div class="modalactions"><button type="button" class="secondary close">Close</button>${task.status==="Completed"?`<button class="secondary" id="reopenTask">Reopen gate</button>`:`<button class="primary" id="completeTask" ${docs.length||shipmentAuto?"":"disabled"}>Complete gate ✓</button>`}</div></div>`);
- renderDocList();
- const input=document.querySelector("#taskFile"),choose=document.querySelector("#chooseFile"),zone=document.querySelector("#dropZone"),name=document.querySelector("#fileName"),complete=document.querySelector("#completeTask");
- const processFile=async f=>{if(!f)return;if(f.size>MAX_FILE_BYTES){alert(`Máximo 2 MB. Tu archivo pesa ${fmtKB(f.size)}.`);return;}if(name)name.textContent=`Uploading: ${f.name} · ${fmtKB(f.size)}`;try{const d=await uploadTaskDocument(order.dbId,folder,f,order.folderPath);docs.push(d);if(name)name.textContent=`Uploaded: ${f.name} · ${fmtKB(f.size)}`;renderDocList();if(complete)complete.disabled=false;}catch(e){if(name)name.textContent="";alert(e.message);}};
- choose?.addEventListener("click",()=>input.click()); zone?.addEventListener("click",e=>{if(e.target.closest("button"))return;input.click();}); input?.addEventListener("change",()=>processFile(input.files[0]));
- if(zone){["dragenter","dragover"].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.add("dragover");}));["dragleave","dragend","drop"].forEach(ev=>zone.addEventListener(ev,e=>{e.preventDefault();e.stopPropagation();zone.classList.remove("dragover");}));zone.addEventListener("drop",async e=>processFile(e.dataTransfer?.files?.[0]));}
- const updateInvoiceHint=()=>{if(taskCode!=="MWSInvoice")return;const po=Number(document.querySelector("#mesPOQty")?.value||0),inv=Number(document.querySelector("#mwsInvoiceQty")?.value||0),diff=Math.abs(po-inv),el=document.querySelector("#invoiceBalanceHint");if(el)el.innerHTML=diff>0?`<b>⚠ ${diff} pc pending.</b> A compensation record will be created when this gate is completed.`:`<b>✓ Quantities match.</b> No PO Balance will be created.`;};
- document.querySelector("#mesPOQty")?.addEventListener("input",updateInvoiceHint);document.querySelector("#mwsInvoiceQty")?.addEventListener("input",updateInvoiceHint);updateInvoiceHint();
- complete?.addEventListener("click",async()=>{try{const gateData=taskCode==="MESPO"?{mesPO:document.querySelector("#mesPOReference").value,mesPOQty:document.querySelector("#mesPOQty").value}:taskCode==="MWSInvoice"?{mesPOQty:document.querySelector("#mesPOQty").value,mwsInvoiceQty:document.querySelector("#mwsInvoiceQty").value,mesPO:order.mesPO,mwsInvoice:document.querySelector("#mwsInvoiceReference").value}:{};await completeTask(task.id,order.dbId,taskCode,{reference:document.querySelector("#taskReference").value,details:document.querySelector("#taskDetails").value},gateData);document.querySelector("#modal").remove();await refresh();view="orders";render();}catch(e){alert(e.message);}});
- document.querySelector("#reopenTask")?.addEventListener("click",async()=>{try{await reopenTask(task.id);document.querySelector("#modal").remove();await refresh();view="orders";render();}catch(e){alert(e.message);}});
+const taskOf = (o, code) => o.tasks.find(t => t.task_code === code);
+const isCancelled = o => o.status === "Cancelled";
+const doneCount = o => GATES.filter(g => taskOf(o, g.code)?.status === "Completed").length;
+const progress = o => Math.round(doneCount(o) / GATES.length * 100);
+const orderState = o => isCancelled(o) ? "Cancelled" : progress(o) === 100 ? "Completed" : doneCount(o) > 0 ? "In Progress" : "Not Started";
+const nextGate = o => GATES.find(g => taskOf(o, g.code)?.status !== "Completed");
+const mismatch = o => Math.abs(o.mesPOQty - o.mwsInvoiceQty);
+const pendingBalance = o => !isCancelled(o) && mismatch(o) > 0 && !o.balances.length;
+const pendingShip = o => Math.max(0, o.qtyRequested - o.qtyShipped);
+const activeOrders = () => S.orders.filter(o => !isCancelled(o));
+const isLate = o => !isCancelled(o) && progress(o) < 100 && o.required_date && o.required_date < todayISO();
+const findOrder = id => S.orders.find(o => o.id === id);
+
+const pipe = (o, lg = false) => `<span class="pipe${lg ? " lg" : ""}" role="img" aria-label="${doneCount(o)} de ${GATES.length} etapas completadas">${GATES.map(g => {
+  const s = taskOf(o, g.code)?.status;
+  return `<i class="${s === "Completed" ? "done" : s === "In Progress" ? "open" : ""}" title="${esc(gateTitle(g, o))}"></i>`;
+}).join("")}</span>`;
+
+/* =========================================================
+   Rutas (hash) — permiten botón Atrás, recargar y compartir enlaces
+   #/dashboard · #/orders · #/orders/PP-2026-001 · #/orders/PP-2026-001/Quote
+   ========================================================= */
+function parseRoute() {
+  const [view, id, gate] = location.hash.replace(/^#\/?/, "").split("/").map(decodeURIComponent);
+  return { view: VIEWS[view] ? view : "dashboard", id: id || null, gate: gate || null };
 }
-function newOrder(){modal(`<div class="modalhead neon"><div><span class="eyebrow">NEW PREPPAP</span><h2>Create PrePPAP Order</h2><p>Enter the request information. Commercial and execution details are completed in the order record.</p></div><button class="close">×</button></div><form id="orderForm"><div class="formgrid">
-<label>Customer<input name="customer" required></label>
-<label>Part Number<input name="partNumber" required></label>
-<label>Revision<input name="revision"></label>
-<label>Purpose<select name="purpose"><option>Prototype</option><option>Validation</option><option>Pre-Production</option><option>PPAP</option><option>Sample</option><option>Other</option></select></label>
-<label>Request Date<input name="requestDate" type="date" value="${new Date().toISOString().slice(0,10)}" required></label>
-<label>Required Date<input name="requiredDate" type="date"></label>
-<label>Qty Requested<input name="qtyRequested" type="number" min="0" required></label>
-<label>Priority<select name="priority"><option>Normal</option><option>Low</option><option>High</option><option>Critical</option></select></label>
-<label>Owner<select name="owner"><option>Quality</option><option>Engineering</option><option>Purchasing</option><option>Logistics</option><option>Finance</option><option>MES</option><option>MWS</option></select></label>
-<label>Shipping Method<select name="shippingMethod"><option>Monterrey → Customer</option><option>MWS → Customer</option></select></label>
-</div><div class="modalactions"><button type="button" class="secondary close">Cancel</button><button class="primary">Create Order</button></div></form></div>`);
- document.querySelector("#orderForm").onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(e.target));try{await createOrder(f);document.querySelector("#modal").remove();view="orders";await refresh();render();}catch(err){let msg=err.message||"Unable to create PrePPAP Order.";if(/duplicate key.*preppap_orders_order_number_key/i.test(msg))msg="The PrePPAP number allocator needs the V6 database migration. Run MIGRATION_V6.sql in Supabase SQL Editor and try again.";alert(msg);}};
-}
-function addCompensationModal(){
-  const active=activeOrders();
-  if(!active.length){alert("No active PrePPAP Orders available.");return;}
-  const options=active.map(o=>`<button type="button" class="order-picker-item" data-pick-order="${esc(o.id)}"><b>${esc(o.id)}</b><span>${esc(o.customer)} · ${esc(o.partNumber)}</span><em>${esc(o.purpose||"")}</em></button>`).join("");
-  modal(`<div class="modalhead neon"><div><span class="eyebrow">ACTIVE PREPPAP ORDERS</span><h2>Add Compensation</h2><p>Select an active PrePPAP Order. Cancelled orders are excluded.</p></div><button class="close">×</button></div><div class="order-picker"><label>PrePPAP Order Number<input id="compOrderSearch" type="search" placeholder="Search PrePPAP number, customer or part number…" autocomplete="off"></label><div id="compOrderList" class="order-picker-list">${options}</div><div id="compOrderEmpty" class="empty" style="display:none">No active PrePPAP Orders match your search.</div></div>`);
-  const search=document.querySelector("#compOrderSearch"),list=document.querySelector("#compOrderList"),empty=document.querySelector("#compOrderEmpty");
-  const filter=()=>{const q=(search.value||"").toLowerCase().trim();let shown=0;list.querySelectorAll("[data-pick-order]").forEach(btn=>{const o=active.find(a=>a.id===btn.dataset.pickOrder);const hay=[o?.id,o?.customer,o?.partNumber,o?.purpose].join(" ").toLowerCase();const yes=!q||hay.includes(q);btn.style.display=yes?"grid":"none";if(yes)shown++;});empty.style.display=shown?"none":"block";};
-  search.addEventListener("input",filter);search.focus();
-  list.addEventListener("click",e=>{const btn=e.target.closest("[data-pick-order]");if(!btn)return;const o=active.find(a=>a.id===btn.dataset.pickOrder);if(o){document.querySelector("#modal")?.remove();balanceModal(o);}});
-}
-function balanceModal(order,idx=-1){const x=idx>=0?order.balances[idx]:{po_type:"Invoice vs PO",po_number:order.mesPO||"",ordered_qty:order.mesPOQty||0,delivered_qty:order.qtyShipped||0,action:"",related_po:"",resolution_date:"",status:"Open",comments:""};modal(`<div class="modalhead neon"><div><span class="eyebrow">${esc(order.id)}</span><h2>${idx>=0?"Edit":"Add"} Compensation</h2></div><button class="close">×</button></div><form id="balanceForm"><div class="formgrid"><label>PO Type<select name="po_type"><option>Invoice vs PO</option><option>PO vs Invoice</option></select></label><label>PrePPAP Order Number<input value="${esc(order.id)}" readonly><input type="hidden" name="po_number" value="${esc(x.po_number)}"></label><label>Ordered Qty<input name="ordered_qty" type="number" min="0" value="${x.ordered_qty}" required></label><label>Delivered / Shipped Qty<input name="delivered_qty" type="number" min="0" value="${x.delivered_qty}" required></label><label class="full">Compensation Action<select name="action"><option value="">Select action</option><option>Ship with next PrePPAP order</option><option>Ship separately</option><option>Credit</option><option>Cancel</option><option>Transfer to another PO</option></select></label><label>Related PO<input name="related_po" value="${esc(x.related_po)}"></label><label>Resolution Date<input name="resolution_date" type="date" value="${esc(x.resolution_date)}"></label><label>Status<select name="status"><option>Open</option><option>Partial</option><option>Closed</option></select></label><label class="full">Comments<textarea name="comments">${esc(x.comments)}</textarea></label></div><div class="balancepreview">Remaining quantity: <strong id="remainingPreview">${Math.max(0,(x.ordered_qty||0)-(x.delivered_qty||0))} pcs</strong></div><div class="modalactions"><button type="button" class="secondary close">Cancel</button><button class="primary">Save Compensation</button></div></form></div>`);const form=document.querySelector("#balanceForm"),update=()=>document.querySelector("#remainingPreview").textContent=Math.max(0,(+form.ordered_qty.value||0)-(+form.delivered_qty.value||0))+" pcs";form.ordered_qty.oninput=update;form.delivered_qty.oninput=update;form.onsubmit=async e=>{e.preventDefault();const f=Object.fromEntries(new FormData(form));f.ordered_qty=+f.ordered_qty;f.delivered_qty=+f.delivered_qty;if(f.ordered_qty===f.delivered_qty)f.status="Closed";try{await updateCompensation(order.dbId,idx,f,idx>=0?order.balances[idx].id:null);document.querySelector("#modal").remove();await refresh();view="balances";render();}catch(err){alert(err.message);}};}
+const go = path => { location.hash = `#/${path}`; };
+const quietRoute = path => history.replaceState(null, "", `#/${path}`);
 
-async function exportOrdersZip(){
-  const btn=document.querySelector("#exportOrders");
-  if(!btn)return;
-  const sourceOrders=orders;
-  if(!sourceOrders.length){alert("No PrePPAP orders to export.");return;}
-  btn.disabled=true;btn.textContent="Preparing ZIP…";
-  try{
-    const {default:JSZip}=await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm");
-    const zip=new JSZip();
-    let files=0;
-    for(const order of sourceOrders){
-      const folder=zip.folder(order.id);
-      const docs=order.documents||[];
-      if(!docs.length){folder.file("README.txt",`GUVEL PrePPAP Order ${order.id}\nNo uploaded evidence files.\n`);continue;}
-      for(const doc of docs){
-        const url=await getDocumentUrl(doc.storage_path);
-        const response=await fetch(url);
-        if(!response.ok)throw new Error(`Could not download ${doc.document_name} (${response.status}).`);
-        const subfolder=folderFor(doc.task_code)||"Evidence";const safeName=String(doc.document_name||"file").replace(/[\\/:*?"<>|]/g,"-");folder.file(`${subfolder}/${safeName}`,await response.blob());
-        files++;
-      }
+function route() {
+  if (!S.session) return;
+  S.route = parseRoute();
+  const key = `${S.route.view}/${S.route.id || ""}`;
+  const y = key === S.lastKey ? window.scrollY : 0;
+  S.lastKey = key;
+  renderView();
+  window.scrollTo(0, y);
+  if (S.route.view === "orders" && S.route.id && S.route.gate) {
+    const o = findOrder(S.route.id);
+    if (!o) { quietRoute("orders"); return; }
+    if (!gateDlg || gateDlg._key !== `${o.id}/${S.route.gate}`) openGateDialog(o, S.route.gate);
+  } else if (gateDlg) closeGateDialog();
+}
+window.addEventListener("hashchange", route);
+// Evita que soltar un archivo fuera de la zona abra el archivo y destruya la sesión de trabajo.
+["dragover", "drop"].forEach(ev => window.addEventListener(ev, e => e.preventDefault()));
+
+/* =========================================================
+   Carga
+   ========================================================= */
+async function reload() {
+  try { S.orders = await listOrders(); }
+  catch (e) { if (isAuthError(e)) return showLogin(friendly(e)); toast(friendly(e), "error"); return; }
+  route();
+}
+
+async function boot() {
+  app.innerHTML = `<div class="loading">Cargando…</div>`;
+  if (CONFIG.DEMO_MODE) return showLogin("El modo demo está desactivado. Conecta el portal a Supabase.");
+  try { S.session = await getSession(); } catch (e) { return fatal(friendly(e)); }
+  onAuthChange(ev => {
+    if (ev === "SIGNED_OUT" && S.session) { S.session = null; S.orders = []; closeGateDialog(); showLogin("Tu sesión terminó. Inicia sesión de nuevo."); }
+  });
+  if (!S.session) return showLogin();
+  await start();
+}
+async function start() {
+  app.innerHTML = `<div class="loading">Cargando órdenes…</div>`;
+  try { S.orders = await listOrders(); }
+  catch (e) { if (isAuthError(e)) return showLogin(friendly(e)); return fatal(friendly(e)); }
+  if (!location.hash) quietRoute("dashboard");
+  route();
+}
+
+function fatal(msg) {
+  app.innerHTML = `<div class="fatal"><div class="fatal-card"><h2>No pudimos conectar con Supabase</h2><p class="muted">${esc(msg)}</p>
+    <p class="muted">Revisa <code>config.js</code>, las políticas RLS y que las migraciones de <code>db/</code> estén aplicadas.</p>
+    <div class="row"><button class="btn primary" data-act="retry">Reintentar</button><button class="btn" data-act="signout">Cerrar sesión</button></div></div></div>`;
+}
+
+/* =========================================================
+   Inicio de sesión
+   ========================================================= */
+function showLogin(message = "") {
+  closeGateDialog();
+  app.innerHTML = `<div class="login">
+    <section class="login-art">
+      <div class="brand"><span class="gmark">G</span><div><strong>GUVEL</strong><small>Smarter quality solutions</small></div></div>
+      <div><h1>Cada PrePPAP, siete etapas, evidencia en cada una.</h1>
+        <p>Sigue la orden desde la cotización hasta la factura al cliente y concilia el PO contra la factura.</p></div>
+      <ol class="route" aria-label="Etapas del flujo">${GATES.map(g => `<li><i></i>${esc(g.short)}</li>`).join("")}</ol>
+    </section>
+    <section class="login-card"><form id="loginForm">
+      <h2>Iniciar sesión</h2><p class="muted">Usa tu cuenta autorizada de la empresa.</p>
+      <label class="f"><span>Correo</span><input name="email" type="email" autocomplete="username" placeholder="nombre@empresa.com" required></label>
+      <label class="f"><span>Contraseña</span><input name="password" type="password" autocomplete="current-password" required></label>
+      <button class="btn primary" id="loginBtn" style="min-height:42px">Entrar</button>
+      <div id="loginMsg" class="login-msg" role="status">${esc(message)}</div>
+    </form></section></div>`;
+  $("#loginForm").onsubmit = async e => {
+    e.preventDefault();
+    const f = new FormData(e.target), msg = $("#loginMsg"), btn = $("#loginBtn");
+    btn.disabled = true; btn.textContent = "Entrando…"; msg.className = "login-msg"; msg.textContent = "";
+    try {
+      await signIn(String(f.get("email")).trim(), f.get("password"));
+      S.session = await getSession();
+      if (!S.session) throw new Error("Supabase no devolvió una sesión activa.");
+      await start();
+    } catch (err) {
+      let m = err.message || "No se pudo iniciar sesión.";
+      if (/email not confirmed/i.test(m)) m = "Correo sin confirmar. Confírmalo en Supabase → Authentication → Users.";
+      else if (/invalid login credentials/i.test(m)) m = "Correo o contraseña incorrectos.";
+      else m = friendly(err);
+      msg.className = "login-msg err"; msg.textContent = m; btn.disabled = false; btn.textContent = "Entrar";
     }
-    const blob=await zip.generateAsync({type:"blob",compression:"DEFLATE",compressionOptions:{level:6}});
-    const date=new Date().toISOString().slice(0,10);
-    const a=document.createElement("a");a.href=URL.createObjectURL(blob);a.download=`PrePPAP Order ${date}.zip`;document.body.appendChild(a);a.click();a.remove();setTimeout(()=>URL.revokeObjectURL(a.href),1000);
-    btn.textContent=`Exported ${files} file${files===1?"":"s"}`;setTimeout(()=>{btn.textContent="Export ZIP";btn.disabled=false;},1800);
-  }catch(e){alert(`Export failed: ${e.message}`);btn.textContent="Export ZIP";btn.disabled=false;}
+  };
 }
-function bind(){document.querySelectorAll("[data-nav]").forEach(x=>x.onclick=()=>{view=x.dataset.nav;render();});document.querySelectorAll("[data-order]").forEach(x=>x.onclick=()=>{selectedId=x.dataset.order;view="orders";render();});document.querySelector("#new")?.addEventListener("click",newOrder);document.querySelector("#auth")?.addEventListener("click",async()=>{await signOut();session=null;showLogin();});document.querySelector("#search")?.addEventListener("input",fill);document.querySelector("#filter")?.addEventListener("change",fill);fill();document.querySelector("#rows")?.addEventListener("click",e=>{const row=e.target.closest("[data-order]");if(!row)return;selectedId=row.dataset.order;view="orders";render();});document.querySelector("#addBalance")?.addEventListener("click",()=>addCompensationModal());document.querySelectorAll("[data-edit-balance]").forEach(x=>x.onclick=()=>{const o=orders.find(a=>a.id===x.dataset.editBalance);balanceModal(o,+x.dataset.bi);});document.querySelectorAll("[data-task]").forEach(x=>x.onclick=()=>{const o=orders.find(a=>a.id===selectedId);if(o)taskModal(o,x.dataset.task);});
-document.querySelector("#closeDetail")?.addEventListener("click",()=>{selectedId=null;render();});
- document.querySelector("#cancelOrder")?.addEventListener("click",async()=>{const o=orders.find(x=>x.id===selectedId);if(!o)return;if(!confirm(`Cancel ${o.id}? Documents, evidence, tasks and history will remain stored.`))return;try{await cancelOrder(o.dbId);await refresh();view="orders";selectedId=o.id;render();}catch(e){alert(`Could not cancel ${o.id}. Run the V4 database migration in Supabase SQL Editor, then retry.
 
-${e.message}`);}});
-document.querySelector("#exportOrders")?.addEventListener("click",exportOrdersZip);
-document.querySelectorAll("[data-flow-order]").forEach(x=>x.onclick=()=>{selectedId=x.dataset.flowOrder;view="orders";render();setTimeout(()=>{const o=orders.find(a=>a.id===selectedId);if(o)taskModal(o,x.dataset.flowTask);},0);});
-document.querySelectorAll("[data-doc]").forEach(x=>x.onclick=async()=>{try{window.open(await getDocumentUrl(x.dataset.doc),"_blank");}catch(e){alert(e.message);}});}
+/* =========================================================
+   Estructura general
+   ========================================================= */
+function navItem(view, ico) {
+  const badge = view === "balances" ? activeOrders().filter(pendingBalance).length : 0;
+  return `<a class="nav ${S.route.view === view ? "active" : ""}" href="#/${view}" ${S.route.view === view ? 'aria-current="page"' : ""}>${icon(ico, 18)}<span>${VIEWS[view]}</span>${badge ? `<span class="count" title="Balances por resolver">${badge}</span>` : ""}</a>`;
+}
+function renderView() {
+  const v = S.route.view;
+  const extra = v === "orders" ? `<button class="btn" data-act="export-all">${icon("download")}<span class="lbl">Exportar ZIP</span></button>`
+    : v === "balances" ? `<button class="btn" data-act="add-balance">${icon("plus")}<span class="lbl">Agregar balance</span></button>` : "";
+  const content = { dashboard, orders: ordersView, flow: flowView, balances: balancesView, shipments: shipmentsView }[v]();
+  app.innerHTML = `<div class="app">
+    <aside class="rail"><div class="brand"><span class="gmark">G</span><div><strong>GUVEL</strong><small>Control de PrePPAP</small></div></div>
+      <nav aria-label="Principal">${navItem("dashboard", "dashboard")}${navItem("orders", "orders")}${navItem("flow", "flow")}${navItem("balances", "balances")}${navItem("shipments", "shipments")}</nav>
+      <div class="rail-foot"><div class="who" title="${esc(S.session?.user?.email)}">${esc(S.session?.user?.email || "")}</div><button data-act="signout">${icon("logout")}<span>Cerrar sesión</span></button></div></aside>
+    <div class="main"><header class="topbar"><h1>${VIEWS[v]}</h1><div class="actions">${extra}<button class="btn primary" data-act="new-order">${icon("plus")}<span class="lbl">Nueva orden</span></button></div></header>
+    <div class="page" id="page">${content}</div></div></div>`;
+  document.title = `${VIEWS[v]}${S.route.id ? ` · ${S.route.id}` : ""} — GUVEL PrePPAP`;
+  if (v === "orders") fillOrderList();
+  if (v === "flow") fillFlow();
+}
+
+/* =========================================================
+   Resumen
+   ========================================================= */
+function orderRow(o, selected = false) {
+  const n = nextGate(o);
+  const info = isCancelled(o) ? "Orden cancelada" : n ? `Siguiente: ${gateTitle(n, o)}` : "Todas las etapas completas";
+  const due = o.required_date && !isCancelled(o) && progress(o) < 100 ? `<span class="due ${isLate(o) ? "late" : ""}">${isLate(o) ? "Vencida " : "Entrega "}${fmtDate(o.required_date)}</span>` : "";
+  return `<a class="orow ${selected ? "sel" : ""}" href="#/orders/${encodeURIComponent(o.id)}">
+    <div class="t1"><b>${esc(o.id)}</b><span>${esc(o.customer)} — ${esc(o.part_number)}</span></div>${pill(orderState(o))}
+    <div class="t2">${pipe(o)}<span class="next">${esc(info)}</span>${due}</div></a>`;
+}
+function pendingList() {
+  const list = activeOrders().filter(pendingBalance);
+  if (!list.length) return `<div class="empty"><strong>Todo conciliado</strong>No hay diferencias entre PO y factura sin registrar.</div>`;
+  return list.map(o => `<div class="bal-item"><div><b>${esc(o.id)}</b><small>${esc(o.customer)} — ${esc(o.part_number)}</small><small>PO ${fmtNum(o.mesPOQty)} · Factura ${fmtNum(o.mwsInvoiceQty)}</small></div>
+    <div><div class="diff">${fmtNum(mismatch(o))}<small> pzas</small></div><button class="btn sm" data-act="add-balance" data-order="${esc(o.id)}">Registrar balance</button></div></div>`).join("");
+}
+function dashboard() {
+  const act = activeOrders();
+  const running = act.filter(o => progress(o) < 100).sort((a, b) => (a.required_date || "9999").localeCompare(b.required_date || "9999"));
+  const stats = [
+    [act.length, "Órdenes activas"], [act.filter(o => progress(o) === 100).length, "Completadas"],
+    [fmtNum(act.reduce((s, o) => s + pendingShip(o), 0)), "Piezas por enviar"],
+    [act.filter(pendingBalance).length, "Balances por resolver", "alert"],
+    [act.reduce((s, o) => s + o.documents.length, 0), "Archivos de evidencia"]
+  ];
+  return `<div class="stats">${stats.map(([n, l, c]) => `<div class="stat ${c && n ? c : ""}"><b>${n}</b><span>${l}</span></div>`).join("")}</div>
+  <div class="cols">
+    <section class="panel"><div class="panel-head"><div><h2>Órdenes en curso</h2><p>Ordenadas por fecha de entrega.</p></div><a class="btn sm" href="#/orders">Ver todas</a></div>
+      ${running.slice(0, 8).map(o => orderRow(o)).join("") || `<div class="empty"><strong>No hay órdenes en curso</strong>Crea una orden para empezar a registrar evidencia.</div>`}</section>
+    <section class="panel"><div class="panel-head"><div><h2>Balances por resolver</h2><p>El PO y la factura no coinciden y no hay registro.</p></div></div>${pendingList()}</section>
+  </div>`;
+}
+
+/* =========================================================
+   Órdenes (lista + detalle)
+   ========================================================= */
+function ordersView() {
+  const has = !!S.route.id, o = has ? findOrder(S.route.id) : null;
+  const detailCol = !has ? `<div class="panel empty"><strong>Selecciona una orden</strong>Aquí verás sus 7 etapas, la evidencia y las cantidades.</div>`
+    : !o ? `<div class="panel empty"><strong>No encontramos la orden ${esc(S.route.id)}</strong><a class="btn" href="#/orders" style="margin-top:12px">Volver a órdenes</a></div>` : detail(o);
+  return `<div class="split ${has ? "has-detail" : ""}">
+    <section class="panel split-list" aria-label="Lista de órdenes">
+      <div class="filters"><label class="search"><span class="sr">Buscar</span>${icon("search")}<input id="q" type="search" placeholder="Buscar orden, cliente o parte" value="${esc(S.q)}" autocomplete="off"></label>
+        <select id="statusFilter" aria-label="Filtrar por estado">${[["all", "Todas"], ["Not Started", "Sin iniciar"], ["In Progress", "En curso"], ["Completed", "Completadas"], ["Cancelled", "Canceladas"]].map(([v, l]) => `<option value="${v}" ${S.status === v ? "selected" : ""}>${l}</option>`).join("")}</select></div>
+      <div class="list-meta" id="listMeta"></div><div id="orderList"></div></section>
+    <section class="detail-col">${detailCol}</section></div>`;
+}
+function fillOrderList() {
+  const box = $("#orderList"); if (!box) return;
+  const q = S.q.trim().toLowerCase();
+  const list = S.orders.filter(o => (S.status === "all" || orderState(o) === S.status) &&
+    (!q || [o.id, o.customer, o.part_number, o.purpose].join(" ").toLowerCase().includes(q)));
+  $("#listMeta").textContent = `${list.length} de ${S.orders.length} órdenes`;
+  box.innerHTML = list.map(o => orderRow(o, o.id === S.route.id)).join("") || `<div class="empty"><strong>Sin resultados</strong>Prueba con otro texto o cambia el filtro.</div>`;
+}
+function detail(o) {
+  const cancelled = isCancelled(o), pend = pendingBalance(o), nxt = nextGate(o);
+  const fact = (l, v, warn) => `<div class="fact ${warn ? "warn" : ""}"><span>${l}</span><b>${v}</b></div>`;
+  return `<article class="panel">
+    <div class="detail-head"><div><a class="btn sm back" href="#/orders">${icon("back")}Órdenes</a>
+      <h2>${esc(o.id)} ${pill(orderState(o))}</h2>
+      <p class="sub">${esc(o.customer)} — ${esc(o.part_number)}${o.revision ? ` rev. ${esc(o.revision)}` : ""}</p></div>
+      <div class="pct"><small>${doneCount(o)} de ${GATES.length} etapas</small>${pipe(o, true)}</div></div>
+    <div class="facts c3">${fact("Propósito", esc(o.purpose))}${fact("Solicitada", fmtDate(o.request_date))}
+      ${fact("Fecha requerida", `${fmtDate(o.required_date)}${isLate(o) ? " (vencida)" : ""}`, isLate(o))}
+      ${fact("Método de envío", esc(o.shipping_method || "—"))}${fact("Responsable", esc(o.owner || "—"))}${fact("Prioridad", esc(o.priority))}</div>
+    <div class="facts c4">${fact("Solicitadas", `${fmtNum(o.qtyRequested)} pzas`)}${fact("Enviadas", `${fmtNum(o.qtyShipped)} pzas`)}
+      ${fact("Por enviar", `${fmtNum(pendingShip(o))} pzas`, pendingShip(o) > 0 && progress(o) === 100)}${fact("Diferencia PO vs factura", `${fmtNum(mismatch(o))} pzas`, pend)}</div>
+    ${cancelled ? `<div class="banner danger">${icon("alert")}<div><b>Orden cancelada.</b> Sale de los tableros activos. Los documentos y el historial se conservan.</div></div>` : ""}
+    ${pend ? `<div class="banner warn">${icon("alert")}<div><b>${fmtNum(mismatch(o))} pzas de diferencia entre PO y factura.</b> <a class="linkbtn" href="#/balances">Registrar balance</a></div></div>` : ""}
+    <div class="gates-wrap"><h3>Etapas</h3><p>${cancelled ? "Consulta la evidencia de cada etapa." : "Abre una etapa para subir evidencia y completarla."}</p>
+      <ol class="gates">${GATES.map((g, i) => {
+        const t = taskOf(o, g.code), st = t?.status || "Not Started", done = st === "Completed";
+        const n = o.documents.filter(d => d.task_code === g.folder).length, isNext = !cancelled && nxt?.code === g.code;
+        return `<li class="gate ${done ? "done" : ""} ${isNext ? "next" : ""}"><span class="mark">${done ? icon("check", 15) : i + 1}</span>
+          <a class="gate-btn" href="#/orders/${encodeURIComponent(o.id)}/${g.code}"><div><b>${esc(gateTitle(g, o))}</b><small>${esc(g.from)} → ${esc(g.to)}</small></div>
+          <span class="ev" title="Archivos de evidencia">${icon("file", 14)}${n}</span>${pill(st)}${icon("chevron")}</a></li>`;
+      }).join("")}</ol></div>
+    <div class="detail-foot"><button class="btn" data-act="export-order" data-order="${esc(o.id)}">${icon("download")}Descargar evidencia (ZIP)</button>
+      ${cancelled ? `<button class="btn" data-act="reactivate" data-order="${esc(o.id)}">Reactivar orden</button>` : `<button class="btn danger" data-act="cancel-order" data-order="${esc(o.id)}">Cancelar orden</button>`}</div>
+  </article>`;
+}
+
+/* =========================================================
+   Etapas, balances y envíos
+   ========================================================= */
+function flowView() {
+  return `<section class="panel"><div class="toolbar">
+    <label class="f" style="display:contents"><span class="sr">Estado</span><select id="flowStatus"><option value="open" ${S.flowStatus === "open" ? "selected" : ""}>Pendientes</option><option value="done" ${S.flowStatus === "done" ? "selected" : ""}>Completadas</option><option value="all" ${S.flowStatus === "all" ? "selected" : ""}>Todas</option></select></label>
+    <label class="f" style="display:contents"><span class="sr">Etapa</span><select id="flowGate"><option value="all">Todas las etapas</option>${GATES.map(g => `<option value="${g.code}" ${S.flowGate === g.code ? "selected" : ""}>${esc(g.title)}</option>`).join("")}</select></label>
+    <span class="muted" id="flowMeta"></span></div>
+    <div class="tablewrap"><table><thead><tr><th>Orden</th><th>Etapa</th><th class="r">Archivos</th><th>Vence</th><th>Estado</th></tr></thead><tbody id="flowBody"></tbody></table></div></section>`;
+}
+function fillFlow() {
+  const body = $("#flowBody"); if (!body) return;
+  const rows = activeOrders().flatMap(o => GATES.map(g => ({ o, g, t: taskOf(o, g.code) })))
+    .filter(r => r.t && (S.flowGate === "all" || r.g.code === S.flowGate) &&
+      (S.flowStatus === "all" || (S.flowStatus === "done") === (r.t.status === "Completed")));
+  $("#flowMeta").textContent = `${rows.length} etapas`;
+  body.innerHTML = rows.map(({ o, g, t }) => `<tr class="click" tabindex="0" data-href="orders/${encodeURIComponent(o.id)}/${g.code}">
+    <td><b>${esc(o.id)}</b><small>${esc(o.customer)} — ${esc(o.part_number)}</small></td><td>${esc(gateTitle(g, o))}</td>
+    <td class="r num">${o.documents.filter(d => d.task_code === g.folder).length}</td>
+    <td class="${t.status !== "Completed" && t.due_date && t.due_date < todayISO() ? "due late" : ""}">${fmtDate(t.due_date)}</td><td>${pill(t.status)}</td></tr>`).join("")
+    || `<tr><td colspan="5" class="empty"><strong>Nada por aquí</strong>No hay etapas con este filtro.</td></tr>`;
+}
+function balancesView() {
+  const rows = S.orders.flatMap(o => o.balances.map(b => ({ o, b })));
+  const pend = activeOrders().filter(pendingBalance);
+  return `${pend.length ? `<section class="panel" style="margin-bottom:20px"><div class="panel-head"><div><h2>Sin registrar</h2><p>Estas órdenes tienen diferencia entre PO y factura.</p></div></div>${pendingList()}</section>` : ""}
+  <section class="panel"><div class="panel-head"><div><h2>Registros de balance</h2><p>Toda diferencia de cantidad debe tener una disposición.</p></div></div>
+    <div class="tablewrap"><table><thead><tr><th>Orden</th><th>PO</th><th class="r">Ordenado</th><th class="r">Entregado</th><th class="r">Faltante</th><th>Acción</th><th>PO relacionado</th><th>Resolución</th><th>Estado</th><th></th></tr></thead><tbody>
+    ${rows.map(({ o, b }) => `<tr><td><a href="#/orders/${encodeURIComponent(o.id)}"><b>${esc(o.id)}</b></a><small>${esc(o.customer)}</small></td><td>${esc(b.po_number || "—")}</td>
+      <td class="r num">${fmtNum(b.ordered_qty)}</td><td class="r num">${fmtNum(b.delivered_qty)}</td><td class="r num ${b.ordered_qty > b.delivered_qty ? "red" : ""}">${fmtNum(Math.max(0, b.ordered_qty - b.delivered_qty))}</td>
+      <td>${esc(b.action || "Sin definir")}</td><td>${esc(b.related_po || "—")}</td><td>${fmtDate(b.resolution_date)}</td><td>${pill(b.status || "Open")}</td>
+      <td><button class="btn sm" data-act="edit-balance" data-order="${esc(o.id)}" data-bid="${esc(b.id)}">Editar</button></td></tr>`).join("")
+      || `<tr><td colspan="10" class="empty"><strong>Sin registros</strong>Se crean solos al completar la factura de Metrics Works con diferencia, o puedes agregarlos a mano.</td></tr>`}
+    </tbody></table></div></section>`;
+}
+function shipmentsView() {
+  const list = activeOrders();
+  return `<section class="panel"><div class="tablewrap"><table><thead><tr><th>Orden</th><th>Parte</th><th>Método</th><th>Etapa de envío</th><th class="r">Solicitadas</th><th class="r">Enviadas</th><th class="r">Por enviar</th></tr></thead><tbody>
+    ${list.map(o => { const t = taskOf(o, "Shipment"); return `<tr class="click" tabindex="0" data-href="orders/${encodeURIComponent(o.id)}/Shipment"><td><b>${esc(o.id)}</b><small>${esc(o.customer)}</small></td><td>${esc(o.part_number)}</td>
+      <td>${esc(o.shipping_method || "—")}</td><td>${pill(t?.status || "Not Started")}</td><td class="r num">${fmtNum(o.qtyRequested)}</td><td class="r num">${fmtNum(o.qtyShipped)}</td>
+      <td class="r num ${pendingShip(o) ? "red" : ""}">${fmtNum(pendingShip(o))}</td></tr>`; }).join("")
+      || `<tr><td colspan="7" class="empty"><strong>Sin envíos</strong>Cuando crees una orden aparecerá aquí.</td></tr>`}</tbody></table></div></section>`;
+}
+
+/* =========================================================
+   Eventos globales (delegación: sobreviven a cada re-render)
+   ========================================================= */
+app.addEventListener("click", async e => {
+  const row = e.target.closest("[data-href]");
+  if (row && !e.target.closest("a,button")) return go(row.dataset.href);
+  const el = e.target.closest("[data-act]"); if (!el) return;
+  const o = el.dataset.order ? findOrder(el.dataset.order) : null;
+  switch (el.dataset.act) {
+    case "retry": return boot();
+    case "signout": S.session = null; S.orders = []; closeGateDialog(); try { await signOut(); } catch {} return showLogin();
+    case "new-order": return newOrderDialog();
+    case "export-all": return exportZip(S.orders, "PrePPAP", el);
+    case "export-order": return o && exportZip([o], o.id, el);
+    case "add-balance": return o ? balanceDialog(o) : pickOrderDialog();
+    case "edit-balance": return o && balanceDialog(o, o.balances.find(b => b.id === el.dataset.bid));
+    case "cancel-order": {
+      if (!o || !await askConfirm(`¿Cancelar ${o.id}?`, "La orden sale de los tableros activos. Los documentos, etapas e historial se conservan y puedes reactivarla.", { ok: "Cancelar orden", danger: true })) return;
+      try { await setOrderStatus(o.dbId, "Cancelled"); toast(`${o.id} cancelada.`); await reload(); } catch (err) { toast(friendly(err), "error"); }
+      return;
+    }
+    case "reactivate":
+      try { await setOrderStatus(o.dbId, "Active"); toast(`${o.id} reactivada.`); await reload(); } catch (err) { toast(friendly(err), "error"); }
+  }
+});
+app.addEventListener("keydown", e => { if (e.key === "Enter" && e.target.matches("tr[data-href]")) go(e.target.dataset.href); });
+app.addEventListener("input", e => { if (e.target.id === "q") { S.q = e.target.value; fillOrderList(); } });
+app.addEventListener("change", e => {
+  if (e.target.id === "statusFilter") { S.status = e.target.value; fillOrderList(); }
+  if (e.target.id === "flowStatus") { S.flowStatus = e.target.value; fillFlow(); }
+  if (e.target.id === "flowGate") { S.flowGate = e.target.value; fillFlow(); }
+});
+
+/* =========================================================
+   Diálogo: nueva orden
+   ========================================================= */
+const opts = (list, sel) => list.map(v => `<option ${v === sel ? "selected" : ""}>${esc(v)}</option>`).join("");
+
+function newOrderDialog() {
+  let dirty = false, busy = false;
+  const dlg = openDialog(`<form class="dlg-body" id="orderForm" novalidate>
+    <header class="dlg-head"><div><p class="crumb">Nueva orden</p><h2>Crear orden PrePPAP</h2><p class="parties">El número se asigna solo y las 7 etapas se crean sin iniciar.</p></div><button type="button" class="btn icon-only" data-close aria-label="Cerrar">${icon("x")}</button></header>
+    <div class="dlg-scroll"><div class="grid2">
+      <label class="f"><span>Cliente</span><input name="customer" required autocomplete="off"></label>
+      <label class="f"><span>Número de parte</span><input name="partNumber" required autocomplete="off"></label>
+      <label class="f"><span>Revisión <em>(opcional)</em></span><input name="revision" autocomplete="off"></label>
+      <label class="f"><span>Propósito</span><select name="purpose">${opts(PURPOSES, "Pre-Production")}</select></label>
+      <label class="f"><span>Fecha de solicitud</span><input name="requestDate" type="date" value="${todayISO()}" required></label>
+      <label class="f"><span>Fecha requerida <em>(opcional)</em></span><input name="requiredDate" type="date"></label>
+      <label class="f"><span>Cantidad solicitada (pzas)</span><input name="qtyRequested" type="number" min="1" step="1" inputmode="numeric" required></label>
+      <label class="f"><span>Prioridad</span><select name="priority">${opts(PRIORITIES, "Normal")}</select></label>
+      <label class="f"><span>Responsable</span><select name="owner">${opts(OWNERS, "Quality")}</select></label>
+      <label class="f"><span>Método de envío</span><select name="shippingMethod">${opts(Object.values(SHIPPING), SHIPPING.MTY)}</select></label>
+      <div class="hint full" id="shipHint"></div></div><div id="formErr"></div></div>
+    <footer class="dlg-foot"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary" id="submitBtn">Crear orden</button></footer></form>`,
+    { guard: () => busy ? false : (!dirty || confirm("Tienes datos sin guardar. ¿Cerrar de todos modos?")) });
+  const form = $("#orderForm", dlg);
+  const hint = () => { $("#shipHint", dlg).textContent = form.shippingMethod.value === SHIPPING.MTY
+    ? "Desde Monterrey: la etapa de envío se marca como completada automáticamente." : "Desde MWS: la etapa de envío requiere evidencia."; };
+  form.addEventListener("input", () => { dirty = true; }); form.shippingMethod.addEventListener("change", hint); hint();
+  form.customer.focus();
+  form.onsubmit = async e => {
+    e.preventDefault(); if (busy) return;
+    const v = Object.fromEntries(new FormData(form)), err = $("#formErr", dlg);
+    const bad = !v.customer.trim() ? "Escribe el cliente." : !v.partNumber.trim() ? "Escribe el número de parte."
+      : !(Number(v.qtyRequested) > 0) ? "La cantidad solicitada debe ser mayor a 0."
+      : v.requiredDate && v.requestDate && v.requiredDate < v.requestDate ? "La fecha requerida no puede ser anterior a la solicitud." : "";
+    if (bad) { err.innerHTML = `<div class="form-error">${icon("alert")}<span>${esc(bad)}</span></div>`; return; }
+    busy = true; $("#submitBtn", dlg).disabled = true; $("#submitBtn", dlg).textContent = "Creando…"; err.innerHTML = "";
+    try {
+      const num = await createOrder(v); dirty = false; dlg.close(); toast(`${num} creada.`);
+      S.orders = await listOrders(); go(`orders/${encodeURIComponent(num)}`); route();
+    } catch (ex) {
+      busy = false; $("#submitBtn", dlg).disabled = false; $("#submitBtn", dlg).textContent = "Crear orden";
+      err.innerHTML = `<div class="form-error">${icon("alert")}<span>${esc(friendly(ex))}</span></div>`;
+    }
+  };
+}
+
+/* =========================================================
+   Diálogo: etapa (evidencia + datos)
+   ========================================================= */
+let gateDlg = null;
+function closeGateDialog() { if (gateDlg?.open) { gateDlg._silent = true; gateDlg.close(); } gateDlg = null; }
+
+function openGateDialog(order, code) {
+  const gate = gateByCode(code), task = taskOf(order, code);
+  if (!gate || !task) { toast("Esta etapa no existe para la orden.", "error"); quietRoute(`orders/${encodeURIComponent(order.id)}`); return; }
+  closeGateDialog();
+  const idx = GATES.indexOf(gate), ro = isCancelled(order), auto = gate.code === "Shipment" && order.shipping_method === SHIPPING.MTY;
+  let busy = false, dirty = false;
+  const docs = () => order.documents.filter(d => d.task_code === gate.folder).sort((a, b) => new Date(b.created_at) - new Date(a.created_at));
+  const isDone = () => task.status === "Completed";
+  const dis = ro ? "disabled" : "";
+  const nz = n => Number(n) > 0 ? Number(n) : "";
+  const ref = task.reference ?? (gate.refCol ? order[gate.refCol] : "") ?? "";
+
+  const fields = (gate.reconcile ? `<div class="recon">
+      <label class="f"><span>PO a Metrics Works</span><input value="${esc(order.mes_po || "Sin capturar")}" readonly></label>
+      <label class="f"><span>Cantidad en el PO (pzas)</span><input name="mesPOQty" type="number" min="0" step="1" inputmode="numeric" required value="${nz(order.mesPOQty)}" ${dis}></label>
+      <label class="f"><span>${gate.refLabel}</span><input name="reference" value="${esc(ref)}" autocomplete="off" ${dis}></label>
+      <label class="f"><span>${gate.qtyLabel}</span><input name="qty" type="number" min="0" step="1" inputmode="numeric" required value="${nz(order.mwsInvoiceQty)}" ${dis}></label></div>
+      <div class="hint" id="reconHint"></div>`
+    : `<label class="f"><span>${gate.refLabel}</span><input name="reference" value="${esc(ref)}" autocomplete="off" ${dis}></label>
+      ${gate.qtyCol ? `<label class="f"><span>${gate.qtyLabel}${gate.qtyRequired ? "" : " <em>(opcional)</em>"}</span><input name="qty" type="number" min="0" step="1" inputmode="numeric" ${gate.qtyRequired ? "required" : ""} value="${nz(order[gate.qtyCol])}" ${dis}></label>` : ""}`)
+    + `<label class="f"><span>Notas <em>(opcional)</em></span><textarea name="details" ${dis}>${esc(task.details || "")}</textarea></label>`;
+
+  const dlg = gateDlg = openDialog(`<div class="dlg-body">
+    <header class="dlg-head"><div><p class="crumb">${esc(order.id)} · etapa ${idx + 1} de ${GATES.length}</p><h2>${esc(gateTitle(gate, order))}</h2><p class="parties">${esc(gate.from)} → ${esc(gate.to)} ${pill(task.status)}</p></div>
+      <button type="button" class="btn icon-only" data-close aria-label="Cerrar">${icon("x")}</button></header>
+    <div class="dlg-scroll">
+      ${auto ? `<div class="hint good">${icon("check")}<span>Envío desde Monterrey: esta etapa se completó automáticamente y no requiere evidencia.</span></div>` : ""}
+      ${ro ? `<div class="hint warn">${icon("alert")}<span>La orden está cancelada: solo puedes consultar.</span></div>` : ""}
+      <section class="sec"><h3>Evidencia</h3><p>${auto ? "Opcional en esta etapa." : "Sube al menos un archivo para poder completar la etapa."} Máximo 2 MB por archivo.</p>
+        ${ro ? "" : `<div class="drop" id="drop"><input id="fileInput" type="file" multiple hidden>${icon("upload", 22)}<b>Arrastra archivos aquí</b><small>o</small><button type="button" class="btn sm" id="pickBtn">Elegir archivos</button></div>`}
+        <div class="upmsg" id="upMsg" role="status"></div><div class="files" id="files"></div></section>
+      <form class="sec" id="gateForm" novalidate><h3>Datos de la etapa</h3><p>${gate.reconcile ? "Compara el PO contra la factura. Si difieren, se crea un registro en Balances de PO." : "Lo que captures aquí se guarda en la orden."}</p>
+        <div class="fields">${fields}</div><div id="gateErr" style="margin-top:12px"></div></form></div>
+    <footer class="dlg-foot">${ro ? `<button class="btn" data-close>Cerrar</button>` : isDone()
+      ? `<button class="btn spacer" id="reopenBtn" type="button">Reabrir etapa</button><button class="btn" data-close>Cerrar</button><button class="btn primary" id="saveBtn" type="button">Guardar cambios</button>`
+      : `<button class="btn" data-close>Cerrar</button><button class="btn primary" id="completeBtn" type="button">Completar etapa</button>`}</footer></div>`,
+    { wide: true, backdrop: false, guard: () => busy ? false : (!dirty || confirm("Tienes cambios sin guardar. ¿Cerrar de todos modos?")) });
+  dlg._key = `${order.id}/${code}`;
+  const form = $("#gateForm", dlg), upMsg = $("#upMsg", dlg);
+
+  const renderFiles = () => {
+    const list = docs(), canDel = !ro && !isDone();
+    $("#files", dlg).innerHTML = list.length ? list.map(d => `<div class="file"><button type="button" class="open" data-open="${esc(d.id)}">${icon("file", 18)}<div><b>${esc(d.document_name)}</b><small>${fmtSize(d.size_bytes || 0)} · ${fmtDateTime(d.created_at)}</small></div></button>
+      ${canDel ? `<button type="button" class="del" data-del="${esc(d.id)}" aria-label="Eliminar ${esc(d.document_name)}">${icon("trash")}</button>` : `<span></span>`}</div>`).join("")
+      : `<div class="muted" style="font-size:13px">Aún no hay archivos en esta etapa.</div>`;
+    const c = $("#completeBtn", dlg); if (c) c.disabled = busy || (!auto && !list.length);
+  };
+  const setBusy = b => { busy = b; $$("button", dlg).forEach(x => { if (!x.hasAttribute("data-close")) x.disabled = b; }); renderFiles(); };
+  const showErr = m => { $("#gateErr", dlg).innerHTML = m ? `<div class="form-error">${icon("alert")}<span>${esc(m)}</span></div>` : ""; };
+  const read = () => Object.fromEntries(new FormData(form));
+  const validate = v => {
+    const n = k => v[k] === "" || v[k] == null ? null : Number(v[k]);
+    if (gate.reconcile) { if (n("mesPOQty") === null || n("qty") === null) return "Captura la cantidad del PO y la cantidad facturada."; }
+    else if (gate.qtyRequired && n("qty") === null) return "Captura la cantidad de piezas.";
+    for (const k of ["mesPOQty", "qty"]) if (n(k) !== null && (!Number.isFinite(n(k)) || n(k) < 0)) return "Las cantidades deben ser números mayores o iguales a 0.";
+    return "";
+  };
+  const hint = () => {
+    const el = $("#reconHint", dlg); if (!el) return;
+    const v = read(), a = v.mesPOQty, b = v.qty;
+    if (a === "" || b === "" || a == null || b == null) { el.className = "hint"; el.textContent = "Captura ambas cantidades para compararlas."; return; }
+    const d = Math.abs(Number(a) - Number(b));
+    el.className = `hint ${d ? "warn" : "good"}`;
+    el.textContent = d ? `Diferencia de ${fmtNum(d)} pzas. ${isDone() ? "Al guardar se actualiza el balance." : "Al completar la etapa se crea un registro en Balances de PO."}` : "Las cantidades coinciden. No se creará balance.";
+  };
+  form.addEventListener("input", () => { dirty = true; showErr(""); hint(); });
+  form.addEventListener("submit", e => e.preventDefault());
+  hint(); renderFiles();
+
+  const finish = async msg => {
+    dirty = false; dlg._silent = true; dlg.close(); gateDlg = null;
+    quietRoute(`orders/${encodeURIComponent(order.id)}`); toast(msg); await reload();
+  };
+  const submit = async mode => {
+    const v = read(), bad = validate(v); if (bad) return showErr(bad);
+    setBusy(true); showErr("");
+    try { mode === "complete" ? await completeGate(order, gate, v) : await saveGate(order, gate, v); await finish(mode === "complete" ? "Etapa completada." : "Cambios guardados."); }
+    catch (ex) { setBusy(false); showErr(friendly(ex)); }
+  };
+  $("#completeBtn", dlg)?.addEventListener("click", () => submit("complete"));
+  $("#saveBtn", dlg)?.addEventListener("click", () => submit("save"));
+  $("#reopenBtn", dlg)?.addEventListener("click", async () => {
+    if (!await askConfirm("¿Reabrir la etapa?", "Volverá a estado «En curso». Si ya generó un registro de balance, ese registro se conserva.", { ok: "Reabrir" })) return;
+    setBusy(true);
+    try { await reopenGate(order, gate); await finish("Etapa reabierta."); } catch (ex) { setBusy(false); showErr(friendly(ex)); }
+  });
+
+  // Evidencia
+  const input = $("#fileInput", dlg), drop = $("#drop", dlg);
+  async function handleFiles(list) {
+    const files = [...(list || [])]; if (busy || !files.length) return;
+    setBusy(true); upMsg.className = "upmsg"; upMsg.textContent = ""; const errs = []; let ok = 0;
+    for (const [i, f] of files.entries()) {
+      upMsg.textContent = `Subiendo ${i + 1} de ${files.length}: ${f.name}…`;
+      try { order.documents.push(await uploadDocument(order, gate, f)); ok++; renderFiles(); }
+      catch (ex) { errs.push(`${f.name}: ${friendly(ex)}`); }
+    }
+    setBusy(false);
+    if (errs.length) { upMsg.className = "upmsg err"; upMsg.innerHTML = errs.map(esc).join("<br>"); } else upMsg.textContent = "";
+    if (ok) toast(ok === 1 ? "Archivo subido." : `${ok} archivos subidos.`);
+  }
+  $("#pickBtn", dlg)?.addEventListener("click", () => input.click());
+  input?.addEventListener("change", () => { const f = [...input.files]; input.value = ""; handleFiles(f); });
+  if (drop) {
+    ["dragenter", "dragover"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.add("over"); }));
+    ["dragleave", "drop"].forEach(ev => drop.addEventListener(ev, e => { e.preventDefault(); drop.classList.remove("over"); }));
+    drop.addEventListener("drop", e => handleFiles(e.dataTransfer?.files));
+  }
+  dlg.addEventListener("click", async e => {
+    const open = e.target.closest("[data-open]"), del = e.target.closest("[data-del]");
+    if (open) {
+      const d = order.documents.find(x => x.id === open.dataset.open);
+      try { await openInNewTab(() => getDocumentUrl(d.storage_path)); } catch (ex) { toast(friendly(ex), "error"); }
+    } else if (del && !busy) {
+      const d = order.documents.find(x => x.id === del.dataset.del);
+      if (!await askConfirm("¿Eliminar archivo?", d.document_name, { ok: "Eliminar", danger: true })) return;
+      setBusy(true);
+      try { await deleteDocument(d); order.documents.splice(order.documents.indexOf(d), 1); toast("Archivo eliminado."); }
+      catch (ex) { toast(friendly(ex), "error"); }
+      setBusy(false);
+    }
+  });
+  dlg.addEventListener("close", () => {
+    if (gateDlg === dlg) gateDlg = null;
+    if (!dlg._silent) { quietRoute(`orders/${encodeURIComponent(order.id)}`); route(); }
+  });
+}
+
+/* =========================================================
+   Balances: selector de orden + formulario
+   ========================================================= */
+function pickOrderDialog() {
+  const list = activeOrders();
+  if (!list.length) return toast("No hay órdenes activas.", "error");
+  const dlg = openDialog(`<div class="dlg-body"><header class="dlg-head"><div><p class="crumb">Agregar balance</p><h2>Elige la orden</h2><p class="parties">Las órdenes canceladas no aparecen.</p></div><button type="button" class="btn icon-only" data-close aria-label="Cerrar">${icon("x")}</button></header>
+    <div class="dlg-scroll"><label class="search"><span class="sr">Buscar orden</span>${icon("search")}<input id="pq" type="search" placeholder="Buscar por número, cliente o parte" autocomplete="off"></label>
+    <div class="picker-list" id="pickList"></div></div></div>`);
+  const draw = () => {
+    const q = $("#pq", dlg).value.trim().toLowerCase();
+    const items = list.filter(o => !q || [o.id, o.customer, o.part_number, o.purpose].join(" ").toLowerCase().includes(q));
+    $("#pickList", dlg).innerHTML = items.map(o => `<button type="button" class="pick" data-pick="${esc(o.id)}"><b>${esc(o.id)}</b><span>${esc(o.customer)} — ${esc(o.part_number)}</span></button>`).join("") || `<div class="empty">Sin resultados.</div>`;
+  };
+  $("#pq", dlg).addEventListener("input", draw); draw(); $("#pq", dlg).focus();
+  dlg.addEventListener("click", e => { const b = e.target.closest("[data-pick]"); if (b) { dlg.close(); balanceDialog(findOrder(b.dataset.pick)); } });
+}
+
+function balanceDialog(order, bal = null) {
+  const x = bal || { po_type: order.mwsInvoiceQty < order.mesPOQty ? "PO vs Invoice" : "Invoice vs PO", po_number: order.mes_po || "", ordered_qty: order.mesPOQty, delivered_qty: order.mwsInvoiceQty, action: "", related_po: "", resolution_date: "", status: "Open", comments: "" };
+  const actions = x.action && !COMP_ACTIONS.includes(x.action) ? [...COMP_ACTIONS, x.action] : COMP_ACTIONS;
+  let busy = false;
+  const dlg = openDialog(`<form class="dlg-body" id="balForm" novalidate>
+    <header class="dlg-head"><div><p class="crumb">${esc(order.id)}</p><h2>${bal ? "Editar" : "Agregar"} balance</h2><p class="parties">${esc(order.customer)} — ${esc(order.part_number)}</p></div><button type="button" class="btn icon-only" data-close aria-label="Cerrar">${icon("x")}</button></header>
+    <div class="dlg-scroll"><div class="grid2">
+      <label class="f"><span>Tipo</span><select name="po_type">${opts(["Invoice vs PO", "PO vs Invoice"], x.po_type)}</select></label>
+      <label class="f"><span>Orden PrePPAP</span><input value="${esc(order.id)}" readonly><input type="hidden" name="po_number" value="${esc(x.po_number || "")}"></label>
+      <label class="f"><span>Cantidad ordenada</span><input name="ordered_qty" type="number" min="0" step="1" required value="${x.ordered_qty}"></label>
+      <label class="f"><span>Cantidad entregada</span><input name="delivered_qty" type="number" min="0" step="1" required value="${x.delivered_qty}"></label>
+      <label class="f full"><span>Acción de compensación</span><select name="action"><option value="">Sin definir</option>${opts(actions, x.action)}</select></label>
+      <label class="f"><span>PO relacionado <em>(opcional)</em></span><input name="related_po" value="${esc(x.related_po || "")}" autocomplete="off"></label>
+      <label class="f"><span>Fecha de resolución <em>(opcional)</em></span><input name="resolution_date" type="date" value="${esc(x.resolution_date || "")}"></label>
+      <label class="f"><span>Estado</span><select name="status">${["Open", "Partial", "Closed"].map(s => `<option value="${s}" ${x.status === s ? "selected" : ""}>${STATUS_ES[s]}</option>`).join("")}</select></label>
+      <div class="hint" id="remain" style="align-self:end"></div>
+      <label class="f full"><span>Comentarios <em>(opcional)</em></span><textarea name="comments">${esc(x.comments || "")}</textarea></label></div><div id="balErr"></div></div>
+    <footer class="dlg-foot"><button type="button" class="btn" data-close>Cancelar</button><button class="btn primary" id="balSave">Guardar balance</button></footer></form>`);
+  const form = $("#balForm", dlg);
+  const upd = () => { const d = Math.max(0, (+form.ordered_qty.value || 0) - (+form.delivered_qty.value || 0)); $("#remain", dlg).textContent = `Faltante: ${fmtNum(d)} pzas`; };
+  form.addEventListener("input", upd); upd();
+  form.onsubmit = async e => {
+    e.preventDefault(); if (busy) return;
+    const f = Object.fromEntries(new FormData(form)), ordered = Number(f.ordered_qty), delivered = Number(f.delivered_qty), err = $("#balErr", dlg);
+    if (!Number.isFinite(ordered) || !Number.isFinite(delivered) || ordered < 0 || delivered < 0) { err.innerHTML = `<div class="form-error">${icon("alert")}<span>Las cantidades deben ser números mayores o iguales a 0.</span></div>`; return; }
+    const payload = { po_type: f.po_type, po_number: f.po_number || null, ordered_qty: ordered, delivered_qty: delivered, action: f.action || null,
+      related_po: f.related_po?.trim() || null, resolution_date: f.resolution_date || null, status: ordered === delivered ? "Closed" : f.status, comments: f.comments?.trim() || null };
+    busy = true; $("#balSave", dlg).disabled = true;
+    try { await saveCompensation(order.dbId, payload, bal?.id || null); dlg.close(); toast("Balance guardado."); go("balances"); await reload(); }
+    catch (ex) { busy = false; $("#balSave", dlg).disabled = false; err.innerHTML = `<div class="form-error">${icon("alert")}<span>${esc(friendly(ex))}</span></div>`; }
+  };
+}
+
+/* =========================================================
+   Exportar evidencia (ZIP)
+   ========================================================= */
+let exporting = false;
+async function exportZip(list, label, btn) {
+  if (exporting) return;
+  const jobs = list.flatMap(o => o.documents.map(doc => ({ o, doc })));
+  if (!jobs.length) return toast("No hay archivos de evidencia para exportar.", "error");
+  exporting = true; const original = btn?.innerHTML; if (btn) btn.disabled = true;
+  const say = t => { if (btn) btn.textContent = t; };
+  try {
+    say("Preparando…");
+    const { default: JSZip } = await import("https://cdn.jsdelivr.net/npm/jszip@3.10.1/+esm");
+    const zip = new JSZip(), used = new Set(), failed = []; let done = 0;
+    const queue = [...jobs];
+    const worker = async () => {
+      for (let job; (job = queue.shift());) {
+        const { o, doc } = job;
+        try {
+          const res = await fetch(await getDocumentUrl(doc.storage_path));
+          if (!res.ok) throw new Error(`HTTP ${res.status}`);
+          const clean = String(doc.document_name || "archivo").replace(/[\\/:*?"<>|]/g, "-");
+          const dot = clean.lastIndexOf("."), base = dot > 0 ? clean.slice(0, dot) : clean, ext = dot > 0 ? clean.slice(dot) : "";
+          const dir = `${o.id}/${doc.task_code || "Evidencia"}`;
+          let path = `${dir}/${clean}`, n = 1;
+          while (used.has(path)) path = `${dir}/${base} (${++n})${ext}`;
+          used.add(path); zip.file(path, await res.blob());
+        } catch (e) { failed.push(`${o.id}/${doc.document_name}: ${e.message}`); }
+        say(`Descargando ${++done}/${jobs.length}…`);
+      }
+    };
+    await Promise.all(Array.from({ length: 4 }, worker));
+    if (failed.length) zip.file("ERRORES.txt", `No se pudieron descargar ${failed.length} archivo(s):\n\n${failed.join("\n")}\n`);
+    say("Comprimiendo…");
+    const blob = await zip.generateAsync({ type: "blob", compression: "DEFLATE", compressionOptions: { level: 6 } });
+    const a = document.createElement("a"); a.href = URL.createObjectURL(blob);
+    a.download = `${label}-evidencia-${todayISO()}.zip`; document.body.append(a); a.click(); a.remove();
+    setTimeout(() => URL.revokeObjectURL(a.href), 4000);
+    failed.length ? toast(`ZIP listo, pero ${failed.length} archivo(s) fallaron (ver ERRORES.txt).`, "error") : toast(`ZIP listo con ${jobs.length} archivo(s).`);
+  } catch (e) { toast(`No se pudo exportar: ${friendly(e)}`, "error"); }
+  finally { exporting = false; if (btn) { btn.innerHTML = original; btn.disabled = false; } }
+}
+
 boot();
